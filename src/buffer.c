@@ -205,8 +205,6 @@ void buf_commit (buffer_t *b, int used)
  */
 char *buf_data(buffer_t *b, int offset, int *szP)
 {
-    char *p;
-
     if (offset >= b->total) {
         if (szP)
             *szP = 0;
