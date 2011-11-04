@@ -58,8 +58,8 @@ HANDLE g_iocp;                  /* IOCP around which the world revolves */
  * Number of requests, including pending i/o's as well as queued Post*s
  * currently on the IOCP queue.
  */
-DWORD g_iocp_queue_size;
-DWORD g_iocp_queue_max;            /* Limit for above */
+int g_iocp_queue_size;
+int g_iocp_queue_max;            /* Limit for above */
 #define SCGI_IOCP_QUEUE_SIZE 200
 
 /*
@@ -185,7 +185,7 @@ struct scgi_stats {
     DWORD nrequests;
     DWORD ntimeouts;
     DWORD nconnect_failures;
-    DWORD iocp_q_max;
+    int   iocp_q_max;
 } g_statistics;
 #define SCGI_STATS_LOG_INTERVAL 60 /* Log every one minute */
 DWORD g_stats_log_interval;
@@ -299,7 +299,10 @@ BOOL timer_module_init(void);
 void timer_module_teardown(void);
 void scgi_log_stats(void);
 void scgi_log_connection(EXTENSION_CONTROL_BLOCK *ecbP);
-BOOL scgi_start_server(LPWSTR cmdline, LPWSTR curdir);
+static BOOL scgi_server_config(LPWSTR profile_path);
+static BOOL scgi_server_command(LPWSTR cmdline, LPWSTR curdir);
+static int scgi_build_headers(context_t *cP);
+
 
 /********
  * Code *
@@ -925,10 +928,8 @@ DWORD WINAPI worker(VOID *notused)
     DWORD              notification;
     DWORD              tid;
     DWORD              last_error;
-    DWORD              hse_result;
     BOOL               status;
     context_t         *cP;
-    EXTENSION_CONTROL_BLOCK *ecbP;
 
     tid = GetCurrentThreadId();
 
@@ -1039,7 +1040,7 @@ end_thread:
 }
 
 /* Read SCGI server configuration. Return TRUE on success, FALSE on fail */
-BOOL scgi_server_config(LPWSTR profile_path)
+static BOOL scgi_server_config(LPWSTR profile_path)
 {
     WCHAR   buf[128];
     int     sockaddr_size;
@@ -1274,7 +1275,7 @@ handle_error:
  * Build the SCGI headers in the context buffer.
  * Return 1 on success, else 0
  */
-int scgi_build_headers(context_t *cP)
+static int scgi_build_headers(context_t *cP)
 {
     char *p;
     int   space;
@@ -1447,7 +1448,6 @@ int scgi_build_headers(context_t *cP)
  */
 void close_session (context_t *cP, int reason)
 {
-    EXTENSION_CONTROL_BLOCK *ecbP;
     DWORD http_status;
     char *http_status_str;
     char *body = "";
@@ -2207,7 +2207,7 @@ BOOL scgi_try_enter_cs(context_t *cP, char *fn, int lineno)
  * Start a new SCGI server process using the specified command line.
  * If curdir is not NULL, it is the current directory for the new process
  */
-BOOL scgi_server_command(LPWSTR cmdline, LPWSTR curdir)
+static BOOL scgi_server_command(LPWSTR cmdline, LPWSTR curdir)
 {
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;

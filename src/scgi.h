@@ -35,11 +35,13 @@
  * memmove is not intrinsic.
  * Do not use COPY_MEMORY if source and destination might overlap.
  */
+#pragma intrinsic(memcpy)
 #if defined(_MSC_VER)
 # define COPY_MEMORY(d, s, n) memcpy((d), (s), (n))
 #else
 # error You need to define your own COPY_MEMORY for this compiler or link with the C runtime.
 #endif
+
 
 /*
  * context_t stores the entire state of a request transaction 
