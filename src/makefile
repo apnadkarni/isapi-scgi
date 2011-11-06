@@ -25,17 +25,24 @@ RELEASETYPE = b
 !ifndef MACHINE
 !if "$(CPU)" == "" || "$(CPU)" == "i386"
 MACHINE		= X86
-MODULE        = $(MODULENAME).dll
 !else
-MACHINE         = $(CPU)
-!if "$(MACHINE)" == "AMD64"
-MODULE        = $(MODULENAME)64.dll
+!if "$(CPU)" == "AMD64"
+MACHINE         = AMD64
 !else
-!error Unsupport architecture $(MACHINE)
+!error Unsupport architecture $(CPU)
 !endif
 !endif
 !endif
 
+!if "$(MACHINE)" == "AMD64"
+MODULE        = $(MODULENAME)64.dll
+!else
+!if "$(MACHINE)" == "X86"
+MODULE        = $(MODULENAME).dll
+!else
+!error Unsupport architecture $(MACHINE)
+!endif
+!endif
 
 MODULEVERSION = $(MODULEMAJOR).$(MODULEMINOR).$(MODULEBUILD)
 FILE_VERSION_STR = "$(MODULEVERSION)"
@@ -152,16 +159,23 @@ CDEBUG = -O1 -Zi -DNDEBUG -W3
 CINSTRUMENT = -DINSTRUMENT
 !ENDIF
 
-# Note the /Oi option enables intrinsic functions - namely memcpy.
+# Note the /Oi option which enables intrinsic functions - namely memcpy - is
+# no longer used in favor of #pragma intrinsic(memcpy)
 # /GF - pool strings and place into read-only memory
 CFLAGS    = $(CDEBUG) /c /nologo  /MD /GF /DWIN32 /D_WIN32 /D_WINDOWS -D_DLL -D_WIN32_WINNT=0x0500 -DMODULEMAJOR=$(MODULEMAJOR) -DMODULEMINOR=$(MODULEMINOR) -DMODULEBUILD=$(MODULEBUILD) $(CINSTRUMENT)
 
-!if "$(MACHINE)" == "AMD64"
+!if "$(MACHINE)" == "AMD64" && $(VCVER) < 9
 CFLAGS = $(CFLAGS) /Wp64
 !endif
 
 # Linker options
-LOPT      = /RELEASE /NOLOGO /MACHINE:$(MACHINE) /OPT:REF /dll /nodefaultlib /entry:DllMain /def:isapi_scgi.def
+LOPT      = /RELEASE /NOLOGO /MACHINE:$(MACHINE) /OPT:REF /dll /def:isapi_scgi.def
+
+# On 64-bits, we cannot avoid the default libs since the intrinsic memcpy
+# is only in effect if the number of bytes is a constant
+!if "$(MACHINE)" != "AMD64"
+LOPT = $(LOPT) /NODEFAULTLIB /entry:DllMain 
+!endif
 
 !if $(VCVER) == 6
 # VC 6 - /OPT:NOWIN98 reduces code size by using 512 byte section alignment

@@ -389,7 +389,7 @@ BOOL WINAPI DllMain(
 BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
 {
     WCHAR  *extP;
-    int     path_len;
+    size_t     path_len;
     WORD    winsock_version = MAKEWORD(2,0);
     WSADATA winsock_data;
     int     nchars;
@@ -925,7 +925,7 @@ DWORD WINAPI worker(VOID *notused)
 {
     OVERLAPPED        *ovlP;
     DWORD              nbytes;
-    DWORD              notification;
+    ULONG_PTR          notification;
     DWORD              tid;
     DWORD              last_error;
     BOOL               status;
@@ -1340,6 +1340,7 @@ static int scgi_build_headers(context_t *cP)
 
         /* Copy the header name */
         COPY_MEMORY(p, hdefP->name, hdefP->len);
+
         space -= hdefP->len;
         p += hdefP->len;
         pending_commit += hdefP->len;
