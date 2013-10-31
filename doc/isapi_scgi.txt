@@ -1,0 +1,229 @@
+= SCGI extension for Microsoft IIS
+
+// To build,
+// asciidoc.py -a data-uri -a icons -a toc -a max-width=55em isapi_scgi.txt
+
+The +isapi_scgi+ ISAPI extension for Microsoft IIS implements the Simple
+Common Gateway Interface (SCGI). SCGI is a standard for communicating
+with web servers on the back end. Requests received by IIS are passed
+on to the application server over the SCGI protocol and the response
+sent back to the client.  Unlike CGI, where the web server will start
+a new process for every request, SCGI involves a long-running process
+(the SCGI server) which is handed off requests from the web server and
+responds as per the protocol. It has the following benefits compared
+to CGI:
+
+* It is an order of magnitude or more faster as it avoids all the
+  startup costs associated with the latter, such as process creation,
+  interpreter initialization, loading of application code and
+  re-establishing database connections.
+
+* Because communication with the web server is on top of TCP, the
+application code can actually run on a different server if desired for
+performance or security reasons.  
+
+This guide describes +isapi_scgi+
+installation and usage but assumes you know how to configure your SCGI
+application server. However, read the notes on application
+compatibility.
+
+== Isapi_scgi features
+
++isapi_scgi+ has the following features:
+
+* Supports Microsoft IIS versions 5.1 and 6.0. IIS 7 is untested.
+* Can optionally start the SCGI application server automatically
+  (requires at least V0.6)
+* Ability to control parameters like number of threads, outstanding
+  IOCP requests etc. for tuning to your particular environment.
+* Implemented as an ISAPI C extension and uses I/O completion ports
+  for minimal memory and CPU usage
+* No other dependencies (not even the C runtime so you don't have to
+  worry about existence of MSVCRT80, MSVRT90 etc. on the target
+  system)
+* Open source with a liberal BSD license that allows free use even in
+  commercial environments.
+
+== Downloading +isapi_scgi+
+
+The latest version of +isapi_scgi+ can be downloaded from the ISAPI SCGI
+extension folder from the Sourceforge Tcl Windows API site. Extract
+the files into a temporary folder before following the instructions
+for installation.
+
+== Installing +isapi_scgi+
+
++isapi_scgi+ is installed like any other ISAPI extension. The sample
+session below illustrates installation under IIS 5.1 on Windows XP. It
+assumes a simple configuration where the extension will be accessed
+under +/sandbox/isapi_scgi.dll/+. All requests to URLs below this will
+be passed by the extension to the SCGI server. Obviously you may use
+techniques such as URL rewriting to hide the use of the DLL but that
+is not described here.
+
+Start up the MMC IIS manager and create a new virtual directory,
+sandbox, under the default Web site as shown in the screenshot below.
+
+image:mmc_initial.png[]
+
+Right click on the sandbox virtual directory and configure its
+properties as shown below.
+
+image:mmc_sandbox_properties.png[]
+
+We have mapped the sandbox virtual directory to a physical directory,
++c:\scgi-example+, on the local system. The important thing to note in
+the above configuration screen is that 'Execute Permissions' have been
+set to 'Scripts and Executables'. This is required for ISAPI extensions
+to be enabled for the virtual directory. Also, setting the 'Application
+Protection' value to 'Low' instead of 'Medium' as above will give higher
+performance.
+
+Copy the +isapi_scgi.dll+ from the temporary directory where you
+extracted the distribution into the physical directory,
++c:\scgi-example+, in the above example. The IIS manager console will
+look as follows after refreshing.
+
+image:mmc_sandbox_content.png[]
+
+If you are not running the default SCGI server address and port,
+follow the steps described in the configuration section to set up
++isapi_scgi+ options.
+
+Finally, stop and restart IIS and the default Web site. The +isapi_scgi+
+extension will now be invoked whenever a request for a URL beginning
+with +/sandbox/isapi_scgi.dll+ is received.
+
+== Configuring +isapi_scgi+
+
++isapi_scgi+ is configured through the +isapi_scgi.ini+ file which
+must be located in the same directory as the +isapi_scgi.dll+
+extension. This file is in the standard Windows INI file format and
+may contain the variables described below. These must be defined in
+the +[SCGI]+ section of the file.
+
+Note that the file is only needed if the defaults described below do
+not match your desired configuration.
+
+[cols="1,3,1", options="header"]
+.Configuration variables
+|===
+|Variable
+|Description
+|Default
+
+|+IOCPQueueMax+
+|Integer value corresponding to the maximum number of queued IOCP requests.
+|50
+
+|+KeepStatistics+
+|If non-0, the extension keeps certain statistics that can be useful in troubleshooting or tuning.
+|0
+
+|+LogFile+
+|Path to the log file.	
+|+isapi_scgi.log+ in the same directory as +isapi_scgi.dll+.
+
+|+LogLevel+
+|Verbosity of logging. 0 turns off, 1 logs only errors.
+|1
+
+|+NumThreads+
+|Integer value corresponding to the number of worker threads to be run.
+|10
+
+|+SCGIServerAddress+
+|IP address of the SCGI server.
+|127.0.0.1
+
+|+SCGIServerPort+
+|Port the SCGI server is listening on.
+|9999
+
+|SCGIServerStartCommand
+|Command to execute start the SCGI application server. See Starting the SCGI server automatically.
+|None. No server is started by default.
+
+|+SCGIServerStopCommand+
+|Command to execute stop the SCGI application server. See Starting the SCGI server automatically.
+|None.
+
+|+StatisticsLogInterval+
+|Controls how often statistics are written to the log file. The interval is given in seconds.
+|60
+|===
+
+The optimal values for +NumThreads+ and +IOCPQueueMax+ depend on the
+system (memory, number of processors and their speed, etc.) and
+configuration (for example, whether the SCGI server on a different
+system). On heavily loaded systems, you should determine these values
+empirically through load testing.
+
+== Starting SCGI servers automatically
+
+You may choose to start your SCGI server automatically and
+independently of IIS. Alternatively, you can configure +isapi_scgi+ to
+start the server automatically when the first request is received and
+to shut it down when IIS unloads the extension (for example, when IIS
+is shut down).
+
+To have +isapi_scgi+ automatically start the SCGI server, set the
+configuration variable +SCGIServerStartCommand+. The value must be the
+full command including a full path and arguments, if any. +isapi_scgi+
+will execute this command without any validation or error
+checking. Similarly, to have +isapi_scgi+ automatically shut down the
+SCGI server, set the configuration variable +SCGIServerStopCommand+. For
+example, if your SCGI server runs as the Windows service +myscgiapp+,
+you might have the following two lines in the +isapi_scgi+ configuration
+file:
+
+----
+SCGIServerStartCommand= net start myscgiapp
+SCGIServerStopCommand= net stop myscgiapp
+----
+
+== Logging in +isapi_scgi+
+
+By default, +isapi_scgi+ will log to the file +isapi_scgi.log+ in the same
+directory where +isapi_scgi.dll+ is located. This can be changed by
+setting the +LogFile+ variable in the configuration.
+
+The messages logged can be controlled by setting the +LogLevel+. By
+default, only errors are logged (+LogLevel=1+). Setting its value to +0+
+will turn off all logging and setting it to +2+ will log informational
+messages as well as errors, including connection requests.
+
+== Compatibility with SCGI applications
+
++isapi_scgi+ implements the SCGI specification and should be
+compatible with any application following that specification. However,
+there is one issue with some current applications. The specification
+states:
+
+****
+When the SCGI server sees the end of the request it sends back a
+response and closes the connection. The format of the response is not
+specified by this protocol.
+****
+
+Currently, +isapi_scgi+ sends the SCGI server application response back
+to the client with no modifications at all. The application is
+responsible for generating all HTTP headers, content, etc. However,
+some applications expect the SCGI handler in the web servers to parse
+the response and convert a dummy +Status:+ header into a HTTP status
+response line. +isapi_scgi+ does not currently do this and expects the
+application to generate the full response. Such applications may have
+to be modified.
+
+It is possible a future version of +isapi_scgi+ may optionally
+implement this behaviour.
+
+== Isapi_scgi support and source code 
+
+Support for +isapi_scgi+ can be
+obtained through the TWAPI project forums on SourceForge or by sending
+email to apnmbx-wits@yahoo.com.
+
+The source code for +isapi_scgi+ is available through the TWAPI
+project and is covered by a BSD license that allows free use for any
+purpose.
