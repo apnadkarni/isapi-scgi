@@ -46,8 +46,11 @@ compatibility.
 
 == Downloading +isapi_scgi+
 
-The latest version of +isapi_scgi+ can be downloaded from the ISAPI SCGI
-extension folder from the Sourceforge Tcl Windows API site. Extract
+The latest version of +isapi_scgi+ can be downloaded from the +Files+
+section of the 
+http://sourceforge.net/projects/isapi-scgi[Sourceforge]
++isapi_scgi+ project.
+Extract
 the files into a temporary folder before following the instructions
 for installation.
 
@@ -220,10 +223,13 @@ implement this behaviour.
 
 == Isapi_scgi support and source code 
 
-Support for +isapi_scgi+ can be
-obtained through the TWAPI project forums on SourceForge or by sending
-email to apnmbx-wits@yahoo.com.
+Support for +isapi_scgi+ can be obtained through the
+http://sourceforge.net/p/isapi-scgi/tickets/[Tickets]
+section of the
+http://sourceforge.net/projects/isapi-scgi[SourceForge]
++isapi_scgi+ project.
 
-The source code for +isapi_scgi+ is available through the TWAPI
-project and is covered by a BSD license that allows free use for any
+The source code for +isapi_scgi+ is also available through
+http://sourceforge.net/projects/isapi-scgi[Sourceforge]
+and is covered by a BSD license that allows free use for any
 purpose.
