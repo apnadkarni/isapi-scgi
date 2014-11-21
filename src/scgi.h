@@ -19,6 +19,10 @@
 #include <windows.h>
 #include <winsock2.h>
 #include <httpext.h>
+#ifndef HSE_REQ_CLOSE_CONNECTION
+/* Older SDK's (VC6/SP5) do not define this */
+# define HSE_REQ_CLOSE_CONNECTION (HSE_REQ_END_RESERVED+17)
+#endif
 
 #include "zlist.h"
 #include "buffer.h"
