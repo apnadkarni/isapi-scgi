@@ -29,6 +29,7 @@
 #define SCGI_ISAPI_MODULE_NAME "isapi_scgi"
 
 #define SCGI_ISAPI_INI_SECTION_NAME_W L"SCGI"
+#define SCGI_ISAPI_INI_HEADEREXT_SECTION_NAME_A "SCGI_HEADER_EXTENSIONS"
 
 HANDLE g_module_instance;               /* Our DLL instance */
 DWORD  g_healthy = FALSE;               /* Used to signal bad errors */
@@ -204,7 +205,9 @@ int g_keep_stats;
 struct scgi_header_def {
     char *name;
     int len;
-} g_scgi_headers[] = {
+};
+
+struct scgi_header_def g_scgi_headers[] = {
     STR_AND_LEN(CONTENT_LENGTH),       /* Must be first */
     STR_AND_LEN(APPL_MD_PATH),
     STR_AND_LEN(APPL_PHYSICAL_PATH),
@@ -257,7 +260,9 @@ struct scgi_header_def {
     STR_AND_LEN(HTTP_X_ORIGINAL_URL), /* mod_rewrite */
     STR_AND_LEN(HTTP_X_REWRITE_URL)   /* IIRF */
 };
-
+/* SCGI extension header names - read in from ini file */
+struct scgi_header_def *g_scgi_extension_headersP = NULL;
+int g_scgi_extension_header_count = 0;    
 
 /* Reason codes passed to close_session */
 #define NORMAL_CLOSE         0
@@ -382,6 +387,108 @@ BOOL WINAPI DllMain(
     g_module_instance = hinst;          /* Save instance handle to get module directory */
     return TRUE;
 }
+
+
+/*
+ * Reads the ini file and constructs the table of header extensions
+ * Should only be called at initialization time.
+ */
+static BOOL read_scgi_extension_headers(void)
+{
+    DWORD nchars, bufsz;
+    char inipath[MAX_PATH+1];
+    BOOL used_default_char;
+    char *bufP, *p, *endP, *dstP;
+    int ndefs, string_space;
+    struct scgi_header_def *hdefP;
+
+    if (g_scgi_extension_headersP)
+        return TRUE;               /* Already read in, will not re-read */
+
+    used_default_char = 0;
+    if (WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, g_ini_path, -1,
+                            inipath, sizeof(inipath),
+                            NULL, &used_default_char) == 0 ||
+        used_default_char ) {
+        LOG_ERROR(("Could not convert INI file path."));
+        return FALSE;
+    }
+
+    bufsz = 32768;              /* Max size of a section */
+    bufP = HeapAlloc(GetProcessHeap(), 0, 32768);
+    nchars = GetPrivateProfileSectionA(
+        SCGI_ISAPI_INI_HEADEREXT_SECTION_NAME_A,
+        bufP, bufsz, inipath);
+    if (nchars >= bufsz-2) {
+        HeapFree(GetProcessHeap(), 0, bufP);
+        LOG_ERROR(("%s INI section too large.", SCGI_ISAPI_INI_HEADEREXT_SECTION_NAME_A));
+        return FALSE;
+    }
+
+    /* First loop to figure out number of entries for memory calculation
+     * purposes. We try not to rely on GetPrivateProfileSectionA giving
+     * us a valid formatted buffer so don't use strlen etc. without
+     * checking for buffer end.
+     */
+    ndefs = 0;
+    string_space = 0;
+    p = bufP;
+    endP = p + nchars;
+    while (p < endP && *p) {
+        /* At the start of a definition. Look for terminating null or '=' */
+        char *token;
+        token = p;
+        while (*p != '\0' && *p != '=' && p < endP)
+            ++p;
+        string_space += (p-token)+1; /* Space for string including \0 */
+        ++ndefs;
+        if (*p == '=') {
+            /* Skip ahead to next entry */
+            while (*p != '\0' && p < endP)
+                ++p;
+            ++p;
+        }
+    }
+
+    if (ndefs == 0)
+        return TRUE;
+
+    /* We allocate everything in one chunk */
+    hdefP = HeapAlloc(GetProcessHeap(), 0, (ndefs * sizeof(*hdefP)) + string_space);
+    g_scgi_extension_headersP = hdefP;
+    g_scgi_extension_header_count = ndefs;
+    
+    /* Now loop through again actually collecting data */
+    p = bufP;
+    dstP = (char *) (ndefs + hdefP);
+    while (p < endP && *p) {
+        /* At the start of a definition. Look for terminating null or '=' */
+        char *token;
+        int len;
+        token = p;
+        while (*p != '\0' && *p != '=' && p < endP)
+            ++p;
+        len = p - token;
+        COPY_MEMORY(dstP, token, len);
+        dstP[len] = '\0';
+        hdefP->name = dstP;
+        hdefP->len = len+1;
+        dstP += len+1;
+        ++hdefP;
+
+        if (*p == '=') {
+            /* Skip ahead to next entry */
+            while (*p != '\0' && p < endP)
+                ++p;
+            ++p;
+        }
+    }
+
+    HeapFree(GetProcessHeap(), 0, bufP);
+    return TRUE;
+}
+
+
 
 /*
  * Standard init function called from IIS. See MSDN for what it should do
@@ -513,6 +620,11 @@ BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
         if ((log_module_inited = log_module_init(g_log_path)) != TRUE)
             goto teardown_on_error;
         log_write("Starting ISAPI SCGI.");
+    }
+
+    if (read_scgi_extension_headers() == FALSE) {
+        log_write("Error reading SCGI extension header configuration.");
+        goto teardown_on_error;
     }
 
     /* Figure out where the server is located and start it up */
@@ -691,6 +803,12 @@ BOOL WINAPI TerminateExtension(DWORD dwFlags)
         if (scgi_server_command(g_scgi_server_stop_command, NULL) != TRUE) {
             log_write("Could not stop SCGI server.");
         }            
+    }
+
+    if (g_scgi_extension_headersP) {
+        HeapFree(GetProcessHeap(), 0, g_scgi_extension_headersP);
+        g_scgi_extension_headersP = NULL;
+        g_scgi_extension_header_count = 0;
     }
 
     WSACleanup();
@@ -1271,11 +1389,14 @@ handle_error:
     context_release(cP);
 }
 
+
 /*
  * Build the SCGI headers in the context buffer.
  * Return 1 on success, else 0
  */
-static int scgi_build_headers(context_t *cP)
+static int scgi_build_headers_helper(context_t *cP, 
+                                     struct scgi_header_def *hdefP,
+                                     int count)
 {
     char *p;
     int   space;
@@ -1283,22 +1404,9 @@ static int scgi_build_headers(context_t *cP)
     int   i;
     int   pending_commit;
     DWORD winerror;
-    char  temp[32];
 
-    LOG_TRACE(("%d scgi_build_headers(%x) enter.", GetCurrentThreadId(), cP));
+    LOG_TRACE(("%d scgi_build_headers_helper(%x) enter.", GetCurrentThreadId(), cP));
 
-    /*
-     * We will retrieve headers one by one and copy them into the
-     * iocp buffers for sending to the SCGI server. The code below tries
-     * to minimize byte copies and allocations (note *tries*, not
-     * *ensures*!). We get the location of the contiguous space in the buffer
-     * and pass it on to the GetServerVariable function repeatedly
-     * which can directly copy it there. If that fails, then we ask the
-     * buffer to grow the free contiguous space. This should be faster
-     * than first finding the lengths and then allocating and then
-     * copying. We hope.
-     */
-    
     /*
      * p will point to contiguous space within the buffer where we can copy
      * space will be size of p[]
@@ -1307,15 +1415,15 @@ static int scgi_build_headers(context_t *cP)
      * copied is used to track how many bytes are actually copied in each
      *   copy "transaction"
      */
+
     pending_commit = 0;         /* Pending commit count */
     space = 0;                  /* Remaining contiguous space */
-    for (i = 0; i < (sizeof(g_scgi_headers)/sizeof(g_scgi_headers[0])); ++i) {
+    for (i = 0; i < count; ++i, hdefP++) {
         /*
          * At the top of the loop, we have space bytes available for
          * writing at the location p, provided space > 0. Else we
          * have to reallocate.
          */
-        struct scgi_header_def *hdefP = &g_scgi_headers[i];
 
         LOG_DETAIL(("%d scgi_build_headers(%x) writing header %s.", GetCurrentThreadId(), cP, hdefP->name));
 
@@ -1406,31 +1514,65 @@ static int scgi_build_headers(context_t *cP)
      * p - pointer to that space
      * pending_commit - count of data to be committed
      */
+    if (pending_commit) {
+        buf_commit(&cP->buf, pending_commit);
+        /* No need - pending_commit = 0; */
+    }
+
+    return 1;
+}
+
+
+
+/*
+ * Build the SCGI headers in the context buffer.
+ * Return 1 on success, else 0
+ */
+static int scgi_build_headers(context_t *cP)
+{
+    char *p;
+    int   space;
+    char  temp[32];
+
+    LOG_TRACE(("%d scgi_build_headers(%x) enter.", GetCurrentThreadId(), cP));
 
     /*
-     * Now write headers not returned as server variables by IIS
+     * We will retrieve headers one by one and copy them into the
+     * iocp buffers for sending to the SCGI server. The code below tries
+     * to minimize byte copies and allocations (note *tries*, not
+     * *ensures*!). We get the location of the contiguous space in the buffer
+     * and pass it on to the GetServerVariable function repeatedly
+     * which can directly copy it there. If that fails, then we ask the
+     * buffer to grow the free contiguous space. This should be faster
+     * than first finding the lengths and then allocating and then
+     * copying. We hope.
+     */
+    
+    if (scgi_build_headers_helper(cP, &g_scgi_headers[0],
+                                  sizeof(g_scgi_headers)/sizeof(g_scgi_headers[0]))
+        == 0) {
+        return 0;
+    }        
+    if (scgi_build_headers_helper(cP, g_scgi_extension_headersP,
+                                  g_scgi_extension_header_count) == 0) {
+        return 0;
+    }
+
+    /*
+     * Now write out SCGI headers not returned as server variables by IIS
      */
 
     /* Tack on "SCGI" header and the comma that terminates header section */
 #define SCGI_CONST_TRAILER "SCGI\0001\000,"
 #define SCGI_CONST_TRAILER_LEN (sizeof(SCGI_CONST_TRAILER) - 1)
-    if (space < SCGI_CONST_TRAILER_LEN) {
-        /* Commit what we have written so far before reserving space */
-        if (pending_commit) {
-            buf_commit(&cP->buf, pending_commit);
-            pending_commit = 0;
-        }
-            
-        space = SCGI_CONST_TRAILER_LEN;
-        p = buf_reserve(&cP->buf, &space, BUF_RESERVE_ALLOW_MOVE);
-        if (p == NULL) {
-            log_write("Could not allocate space for SCGI header SCGI.");
-            return 0;
-        }
+    space = SCGI_CONST_TRAILER_LEN;
+    p = buf_reserve(&cP->buf, &space, BUF_RESERVE_ALLOW_MOVE);
+    if (p == NULL) {
+        log_write("Could not allocate space for SCGI header SCGI.");
+        return 0;
     }
     COPY_MEMORY(p, SCGI_CONST_TRAILER, SCGI_CONST_TRAILER_LEN);
-    pending_commit += SCGI_CONST_TRAILER_LEN;
-    buf_commit(&cP->buf, pending_commit);
+    buf_commit(&cP->buf, SCGI_CONST_TRAILER_LEN);
 
     /*
      * Write the SCGI header size preamble. The -1 is because the trailing

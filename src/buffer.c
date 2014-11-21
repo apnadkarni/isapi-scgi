@@ -170,7 +170,7 @@ char *buf_reserve(buffer_t *b, int *szP, int flags)
  * Commits previously allocated space by buf_reserve.
  * Parameter used is the number of bytes reserved by the buf_reserve
  * call that are to be committed. used must be less than the sz call
- * in the prior buf_reserve call, else behaviour is unknown.
+ * in the prior buf_reserve call, else behaviour is undefined.
  *
  * Returns 1 on success, 0 on fail (which is very bad since it indicates
  * a bug, most likely in the application code as we are of course bug
