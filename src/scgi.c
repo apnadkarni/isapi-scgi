@@ -37,6 +37,9 @@ DWORD  g_healthy = FALSE;               /* Used to signal bad errors */
 /* Ini file location */
 WCHAR g_ini_path[MAX_PATH];
 
+/* Whether to use NonParsed Headers mode */
+int g_force_nph = 0;
+
 /* Log settings */
 int g_log_level;                       /* How verbose? */
 WCHAR g_log_path[MAX_PATH];
@@ -265,13 +268,16 @@ struct scgi_header_def *g_scgi_extension_headersP = NULL;
 int g_scgi_extension_header_count = 0;    
 
 /* Reason codes passed to close_session */
-#define NORMAL_CLOSE         0
-#define SHUTDOWN_CLOSE       1
+#define NO_CLOSE             0  /* Should not be passed to close_session.
+                                   Used to indicate close_session not to be 
+                                   called */
+#define NORMAL_CLOSE         1
 #define CLIENT_ERROR_CLOSE   2
 #define SCGI_ERROR_CLOSE     3
 #define RESOURCE_ERROR_CLOSE 4
 #define TIMEOUT_CLOSE        5
 #define INTERNAL_ERROR_CLOSE 6  /* Bug/inconsistent state */
+#define SHUTDOWN_CLOSE       7
 
 /*****************************************************************
  * Prototypes
@@ -556,6 +562,12 @@ BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
     COPY_MEMORY(&g_ini_path[path_len], L".ini", sizeof(L".ini"));
 
     /* Read all configuration values from the ini file */
+    g_force_nph = GetPrivateProfileIntW(
+        SCGI_ISAPI_INI_SECTION_NAME_W,
+        L"NonParsedHeaders",
+        0, // Parse headers by default
+        g_ini_path
+        );
     g_log_level = GetPrivateProfileIntW(
         SCGI_ISAPI_INI_SECTION_NAME_W,
         L"LogLevel",
@@ -875,6 +887,13 @@ context_t *context_new(void)
     cP->locker_source_line = 0;
 #endif
 
+    cP->status_line = NULL;
+
+    /* Initialize buffer used for response header */
+    cP->header_state = CONTEXT_HEADER_STATE_INIT;
+    cP->header_bol = 0;
+    buf_init(&cP->header, 0);
+
     /* Initialize buffer leaving room in front for SCGI length prefix */
     buf_init(&cP->buf, SCGI_LENGTH_PREFIX_MAX);
 
@@ -892,8 +911,13 @@ void context_delete(struct context *cP)
 
     /*
      * Note cP->cs is NOT reinitialized as we intend to reuse cP.
-     * However cP->buf is reinitialized to free any extra buffers.
+     * However cP->{header,buf} are reinitialized to free any extra buffers.
      */
+    if (cP->status_line) {
+        scgi_free_memory(cP->status_line);
+        cP->status_line = NULL;
+    }
+    buf_reinit(&cP->header, 0);
     buf_reinit(&cP->buf, SCGI_LENGTH_PREFIX_MAX);
     EnterCriticalSection(&g_free_contexts_cs);
     ZLIST_PREPEND(&g_free_contexts, cP);
@@ -1327,7 +1351,7 @@ void start_session(context_t *cP)
 
     /*
      * Ideally, we would like to connect with a IOCP based call,
-     * but there is no such call on Win2K (ConnectEx requires XP).
+     * but there is no such call on Win2K (ConnectEx requires XP). TBD
      * So we are forced to do a blocking connect. We compensate
      * elsewhere by configuring more threads than would be required
      * in a purely IOCP model.
@@ -1578,7 +1602,7 @@ static int scgi_build_headers(context_t *cP)
      * Write the SCGI header size preamble. The -1 is because the trailing
      * "," is not included in the count.
      */
-    wsprintf(temp, "%d:", buf_byte_count(&cP->buf) - 1);
+    wsprintf(temp, "%d:", buf_count(&cP->buf) - 1);
     LOG_TRACE(("%d scgi_build_headers(%x) calling buf_prepend and returning.", GetCurrentThreadId(), cP));
     return buf_prepend(&cP->buf, temp, lstrlen(temp));
 }
@@ -1831,6 +1855,250 @@ void send_error_and_close
     LOG_TRACE(("%d send_error_and_close(%x,%s,...) enter.", GetCurrentThreadId(), ecbP, (http_statusP ? http_statusP : "")));
 }
 
+
+/*
+ * Called to process a single header line.
+ *  - cP must be locked on entry and is locked on exit.
+ *  - cP->header contains header terminated with CR-LF and with
+ *    cP->header_bol containing offset to beginning of the line
+ * Manipulates both cP->header and cP->buf so callers should be aware
+ * pointers into either may invalid on return.
+ * Returns NO_CLOSE if session is to stay open, any other value
+ * is to be used as the reason for closing the session.
+ */
+int scgi_process_header_line(context_t *cP)
+{
+    char key[32];   /* Big enough to hold Status:, Location: etc. */
+    int sz;
+    char ch, *p;
+
+    p = buf_data(&cP->header, cP->header_bol, &sz);
+
+    /* TBD Assert linelen >= 2 since caller must guarantee CR LF ending */
+
+    /* p now points to sz contiguous bytes */
+
+    switch (*p) {
+    case 's':
+    case 'S':
+    case 'l':
+    case 'L':
+    case 'c':
+    case 'C':
+        break;
+
+    default:
+        /* Not a header we are interested in. Will just pass on */
+        cP->header_bol = buf_count(&cP->header); /* Update where next line will start */
+        return NO_CLOSE;
+    }
+
+    sz = buf_copy_data(&cP->header, cP->header_bol, key, sizeof(key)-1);
+    key[sz] = '\0';
+    p = key;
+    while (*p && *p != ':')
+        ++p;
+    *p = '\0';
+    ch = key[0];
+    if ((ch == 'S' || ch == 's') && lstrcmpi(key+1, "tatus:") == 0) {
+        /* Found the status header. Save it off */
+        cP->status_nchars =
+            buf_count(&cP->header) /* Total bytes in header */
+            - cP->header_bol            /* minus start of line offset */
+            - (sizeof("Status:")-1)     /* minus Status: */
+            - 2;                        /* minus terminating CR-LF */
+        cP->status_line = scgi_allocate_memory(cP->status_nchars);
+        buf_copy_data(&cP->header, cP->header_bol, cP->status_line, cP->status_nchars);
+        buf_truncate(&cP->header, cP->header_bol); /* Erase status line */
+        return NO_CLOSE;
+    } else if ((ch == 'L' || ch == 'l') && lstrcmpi(key+1, "ocation:") == 0) {
+        /* For now, just remember we have seen a location header */
+        cP->flags |= CONTEXT_F_LOCATION_SEEN;
+    } else if (ch == 'C' || ch == 'c') {
+        if (lstrcmpi(key+1, "ontent-type:") == 0) {
+            /* For now, just remember we have seen a content-type header */
+            cP->flags |= CONTEXT_F_CONTENT_TYPE_SEEN;
+        } else if (lstrcmpi(key+1, "onnection:") == 0) {
+            char kabuf[32];
+            sz = buf_copy_data(&cP->header, cP->header_bol+sizeof("Connection:")-1, kabuf, sizeof(kabuf)-1);
+            kabuf[sz] = '\0';
+            p = kabuf;
+            while (*p && (*p == ' ' || *p == '\t'))
+                ++p;
+            if (lstrcmpi(p, "Keep-Alive") == 0)
+                cP->flags |= CONTEXT_F_KEEPALIVE_SEEN;
+        }
+    }
+
+    return NO_CLOSE;
+}
+
+/*
+ * Called when entire response header has been received from SCGI server.
+ *  - cP must be locked on entry and is locked on exit.
+ *  - cP->header contains header terminated with CR-LF CR-LF
+ *  - cP->status_line contains status line (if any) consisting of
+ *    cP->status_nchars characters (without terminating CR-LF)
+ * Returns NO_CLOSE if session is to stay open, any other value
+ * is to be used as the reason for closing the session.
+ */
+int scgi_process_header(context_t *cP)
+{
+    HSE_SEND_HEADER_EX_INFO hdr;
+    char *allocatedP = NULL, *p;
+    DWORD sz;
+    int retval = NO_CLOSE;
+    
+    hdr.cchHeader = buf_count(&cP->header);
+    hdr.pszHeader = buf_data(&cP->header, 0, &sz);
+    if (sz != hdr.cchHeader) {
+        /* Not contiguous. Need to make it so. */
+        allocatedP = scgi_allocate_memory(hdr.cchHeader);
+        if (allocatedP == NULL)
+            return RESOURCE_ERROR_CLOSE;
+        hdr.cchHeader = buf_copy_data(&cP->header, 0, allocatedP, hdr.cchHeader);
+        hdr.pszHeader = allocatedP;
+    }
+
+    p = cP->status_line;
+    if (p) {
+        char *end;
+        p = cP->status_line;
+        end = p + cP->status_nchars;
+        while (p < end && (*p == ' ' || *p == '\t'))
+            ++p;
+        if (p == end)
+            p = NULL;
+        else
+            cP->status_nchars = end - p;
+    }
+
+    if (p == NULL) {
+        p = "200 OK";
+        cP->status_nchars = sizeof("200 OK") - 1;
+    }
+
+    hdr.pszStatus = p;
+    hdr.cchStatus = cP->status_nchars;
+    hdr.fKeepConn = TRUE;       /* Do not close connection. Content is still
+                                   to be sent */
+    if (cP->ecbP->ServerSupportFunction(cP->ecbP->ConnID, HSE_REQ_SEND_RESPONSE_HEADER_EX, &hdr, NULL, NULL) != TRUE) {
+        log_write("%d scgi_process_header HSE_REQ_SEND_RESPONSE_HEADER_EX returned error %d.", GetCurrentThreadId(), GetLastError());
+        retval = CLIENT_ERROR_CLOSE;
+    }
+    
+    if (allocatedP)
+        scgi_free_memory(allocatedP);
+    return retval;
+}
+
+/*
+ * Called to process response from SCGI server. Parses it looking for
+ * status and other headers. May change context state.
+ * cP must be locked on entry and is locked on exit.
+ * Buffer cP->header may be reallocated.
+ * Returns NO_CLOSE if session is to stay open, any other value
+ * is to be used as the reason for closing the session.
+ */
+static int scgi_handle_response(context_t *cP, DWORD nbytes)
+{
+    char *p, *end, *dst, *dst_start;
+    int space, status = NO_CLOSE;
+
+    __debugbreak();
+
+    p = cP->ioptr[0].buf;
+    end = p + nbytes;
+
+    /* Ensure header buffer will have enough bytes */
+    while (p < end) {
+        space = end-p+1;        /* Extra 1 byte in case we have to LF->CR LF */
+        dst_start = buf_reserve(&cP->header, &space, BUF_RESERVE_ALLOW_MOVE);
+        dst = dst_start;
+        /* NOTE nbytes now contains allocated space, NOT # chars */
+        if (dst == NULL) {
+            log_write("Could not allocate space for response header.");
+            status = RESOURCE_ERROR_CLOSE;
+            break;
+        }
+
+        switch (cP->header_state) {
+        case CONTEXT_HEADER_STATE_INIT:
+            cP->header_state = CONTEXT_HEADER_STATE_LINE;
+            /* FALLTHRU */
+        case CONTEXT_HEADER_STATE_LINE:
+            /* Middle of a line parse. Look for a CR or LF */
+            do {
+                char ch = *p++;
+                *dst++ = ch;
+                if (ch == '\r') {
+                    cP->header_state = CONTEXT_HEADER_STATE_CR;
+                    break;
+                } else if (ch == '\n') {
+                    /* LF without a preceding CR. Replace with CRLF */
+                    /* buf_reserve at top guarantees we have an extra byte */
+                    dst[-1] = '\r';
+                    *dst++ = '\n';
+                    cP->header_state = CONTEXT_HEADER_STATE_LF;
+                    break;
+                }
+            } while (p < end);
+            break;
+        case CONTEXT_HEADER_STATE_CR:
+            /* Have just seen a CR. */
+            switch (*dst++ = *p++) {
+            case '\n':
+                /* Have one full header line */
+                cP->header_state = CONTEXT_HEADER_STATE_LF;
+                break;
+            case '\r':
+                --dst;          /* Collapse extra CR */
+                break;          /* No change in state */
+            default:
+                cP->header_state = CONTEXT_HEADER_STATE_LINE;
+                break;
+            }
+            break;
+        }
+
+        buf_commit(&cP->header, dst-dst_start);
+        if (cP->header_state == CONTEXT_HEADER_STATE_LF) {
+            /* End of line */
+            if ((buf_count(&cP->header) - cP->header_bol) == 2) {
+                /* Two chars in line (CR LF) -> empty line -> end of header */
+                cP->header_state = CONTEXT_HEADER_STATE_DONE;
+                status = scgi_process_header(cP);
+                if (status == NO_CLOSE) {
+                    /* Send off data that remains in the buffer */
+                    if (p != end) {
+                        cP->state = CONTEXT_STATE_WRITE_CLIENT;
+                        cP->ioptr[0].buf = p;
+                        cP->ioptr[0].len = end-p;
+                        cP->flags |= CONTEXT_F_ASYNC_PENDING | CONTEXT_F_CLIENT_SENT;
+                        if (cP->ecbP->WriteClient(
+                                cP->ecbP->ConnID,
+                                cP->ioptr[0].buf,
+                                &(cP->ioptr[0].len),
+                                HSE_IO_ASYNC) == FALSE) {
+                            log_write("%d scgi_handle_response(%x,%d) WriteClient returned error %d.", GetCurrentThreadId(), cP, cP->ioptr[0].len, GetLastError());
+                            cP->flags &= ~ CONTEXT_F_ASYNC_PENDING;
+                            status = CLIENT_ERROR_CLOSE;
+                        }
+                    }
+                }
+                break;
+            } else {
+                /* Process a header line */
+                status = scgi_process_header_line(cP);
+                cP->header_state = CONTEXT_HEADER_STATE_LINE;
+            }
+        }
+    }
+
+    return status;
+}
+
+
 /*
  * Called when a I/O on an SCGI socket completes successfully.
  * On entry, cP must be locked but its ref count must reflect
@@ -1902,21 +2170,33 @@ void scgi_socket_handler(context_t *cP, DWORD nbytes)
          * Read nbytes data from SCGI server. Write them out to the client
          */
         if (nbytes) {
-            /* Got some data. Send it on */
             LOG_TRACE(("%d scgi_socket_handler(%x,%d) read %d bytes from server, writing to client.", GetCurrentThreadId(), cP, nbytes, nbytes));
-            cP->state = CONTEXT_STATE_WRITE_CLIENT;
-            cP->ioptr[0].len = nbytes;
-            cP->flags |= CONTEXT_F_ASYNC_PENDING | CONTEXT_F_CLIENT_SENT;
-            if (cP->ecbP->WriteClient(
-                    cP->ecbP->ConnID,
-                    cP->ioptr[0].buf,
-                    &(cP->ioptr[0].len),
-                    HSE_IO_ASYNC)
-                == FALSE) {
-                log_write("%d scgi_socket_handler(%x,%d) WriteClient returned error %d.", GetCurrentThreadId(), cP, nbytes, GetLastError());
-                cP->flags &= ~ CONTEXT_F_ASYNC_PENDING;
-                reason_for_close = CLIENT_ERROR_CLOSE;
-                goto end_session;
+
+            if (g_force_nph || cP->header_state == CONTEXT_HEADER_STATE_DONE) {
+                /* g_force_nph - Non-parsed headers. SCGI server must send
+                 * entire HTTP response. We stream this directly to
+                 * client. Otherwise, if header processing is done, again
+                 * we can stream directly to client.
+                 */
+                cP->state = CONTEXT_STATE_WRITE_CLIENT;
+                cP->ioptr[0].len = nbytes;
+                cP->flags |= CONTEXT_F_ASYNC_PENDING | CONTEXT_F_CLIENT_SENT;
+                if (cP->ecbP->WriteClient(
+                        cP->ecbP->ConnID,
+                        cP->ioptr[0].buf,
+                        &(cP->ioptr[0].len),
+                        HSE_IO_ASYNC)
+                    == FALSE) {
+                    log_write("%d scgi_socket_handler(%x,%d) WriteClient returned error %d.", GetCurrentThreadId(), cP, nbytes, GetLastError());
+                    cP->flags &= ~ CONTEXT_F_ASYNC_PENDING;
+                    reason_for_close = CLIENT_ERROR_CLOSE;
+                    goto end_session;
+                }
+            } else {
+                /* Need to process response headers */
+                reason_for_close = scgi_handle_response(cP, nbytes);
+                if (reason_for_close != NO_CLOSE)
+                    goto end_session;
             }
         }
         else {
@@ -2095,7 +2375,7 @@ DWORD initiate_scgi_socket_read(context_t *cP)
 
     cP->state = CONTEXT_STATE_READ_SCGI;
     buf_reinit(&cP->buf, 0);
-    temp = 2000;        /* At least 2K buffer */
+    temp = 2000;        /* At least 2K buffer - TBD - why not bigger ? */
     cP->ioptr[0].buf = buf_reserve(&cP->buf, &temp, 0);
     if (cP->ioptr[0].buf == NULL) {
         log_write("%d initiate_scgi_socket_read(%x) could not reserve buffer memory.", GetCurrentThreadId(), cP);

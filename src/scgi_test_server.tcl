@@ -65,7 +65,7 @@ proc handle_request {sock headers body} {
 
     #parray Headers
     #puts $body
-     puts $sock "HTTP/1.0 200 OK\nContent-Type: text/html\n\n<HTML><BODY>[::html::tableFromArray Headers]<H3>Body</H3><PRE>$body</PRE>"
+     puts $sock "Status: 200 OK\nContent-Type: text/html\n\n<HTML><BODY>[::html::tableFromArray Headers]<H3>Body</H3><PRE>$body</PRE>"
     if {$Headers(REQUEST_METHOD) eq "GET"} {
         puts $sock {<FORM METHOD="post" ACTION="/sandbox/isapi_scgi.dll">}
         foreach pair [split $Headers(QUERY_STRING) &] {

@@ -31,7 +31,7 @@ typedef struct buffer {
     char *overflowP;
     char  data[4000];
 } buffer_t;
-#define buf_byte_count(b) ((b)->total)
+#define buf_count(b) ((b)->total)
 
 
 #define BUF_RESERVE_ALLOW_MOVE 0x1 /* See buf_reserve */
@@ -42,8 +42,11 @@ void buf_module_teardown(void);
 BOOL buf_reinit(buffer_t *b, int offset);
 char *buf_reserve(buffer_t *b, int *szP, int flags);
 void buf_commit (buffer_t *b, int used);
+char buf_index(buffer_t *b, int offset);
 char *buf_data(buffer_t *b, int offset, int *szP);
+int buf_copy_data(buffer_t *b, int offset, char *out, int out_sz);
 BOOL buf_init(buffer_t *b, int offset);
 BOOL buf_prepend (buffer_t *b, char *p, int sz);
+void buf_truncate (buffer_t *b, int off);
 
 #endif

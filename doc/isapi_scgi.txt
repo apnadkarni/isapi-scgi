@@ -1,7 +1,13 @@
+:toc:
+
 = SCGI extension for Microsoft IIS
 
 // To build,
 // asciidoc.py -a data-uri -a icons -a toc -a max-width=55em isapi_scgi.txt
+
+A multithreaded, IOCP-based, ISAPI extension for the Simple Common Gateway
+Protocol.
+
 
 The +isapi_scgi+ ISAPI extension for Microsoft IIS implements the Simple
 Common Gateway Interface (SCGI). SCGI is a standard for communicating

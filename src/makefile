@@ -162,7 +162,7 @@ CINSTRUMENT = -DINSTRUMENT
 # Note the /Oi option which enables intrinsic functions - namely memcpy - is
 # no longer used in favor of #pragma intrinsic(memcpy)
 # /GF - pool strings and place into read-only memory
-CFLAGS    = $(CDEBUG) /c /nologo  /MD /GF /DWIN32 /D_WIN32 /D_WINDOWS -D_DLL -D_WIN32_WINNT=0x0500 -DMODULEMAJOR=$(MODULEMAJOR) -DMODULEMINOR=$(MODULEMINOR) -DMODULEBUILD=$(MODULEBUILD) $(CINSTRUMENT)
+CFLAGS    = $(CDEBUG) /c /nologo /MD /GF /DWIN32 /D_WIN32 /D_WINDOWS -D_DLL -D_WIN32_WINNT=0x0500 -DMODULEMAJOR=$(MODULEMAJOR) -DMODULEMINOR=$(MODULEMINOR) -DMODULEBUILD=$(MODULEBUILD) $(CINSTRUMENT)
 
 !if "$(MACHINE)" == "AMD64" && $(VCVER) < 9
 CFLAGS = $(CFLAGS) /Wp64
@@ -174,7 +174,7 @@ LOPT      = /RELEASE /NOLOGO /MACHINE:$(MACHINE) /OPT:REF /dll /def:isapi_scgi.d
 # On 64-bits, we cannot avoid the default libs since the intrinsic memcpy
 # is only in effect if the number of bytes is a constant
 !if "$(MACHINE)" != "AMD64"
-LOPT = $(LOPT) /NODEFAULTLIB /entry:DllMain 
+LOPT = $(LOPT) /NODEFAULTLIB /entry:DllMain
 !endif
 
 !if $(VCVER) == 6

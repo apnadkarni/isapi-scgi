@@ -1,7 +1,7 @@
 /*
  * Buffer management for ISAPI extension for SCGI
  *
- * (c) 2009, Ashok P. Nadkarni
+ * (c) 2009-2014, Ashok P. Nadkarni
  */
 
 /* See comments in definition of struct buffer in buffer.h */
@@ -193,6 +193,25 @@ void buf_commit (buffer_t *b, int used)
     /* Note the overflow need not change */
 }
 
+/*
+ * Returns the character at the specified offset. Returns \0 if
+ * offset is beyond content size. Caller can distinguish by checking
+ * offset against buf_byte_count
+ */
+char buf_index(buffer_t *b, int offset)
+{
+    if (offset >= b->total)
+        return '\0';
+
+    if (offset < b->data_used) {
+        /* Return the preallocated buffer content (part) */
+        return b->data[b->data_off + offset];
+    }
+    else {
+        offset -= b->data_used;
+        return b->overflowP[offset];
+    }
+}
 
 
 /*
@@ -223,6 +242,27 @@ char *buf_data(buffer_t *b, int offset, int *szP)
     }
 }
 
+/* Copies specified number of bytes to the output buffer. Returns
+ * number of bytes actually copied (which may be less than requested
+ * if insufficient number of bytes in b)
+ */
+int buf_copy_data(buffer_t *b, int offset, char *out, int out_sz)
+{
+    int count = 0;
+
+    while (count < out_sz) {
+        int sz;
+        char *p = buf_data(b, offset+count, &sz);
+        if (sz == 0)
+            break;
+        if (sz > (out_sz - count))
+            sz = out_sz - count;
+        COPY_MEMORY(out+count, p, sz);
+        count += sz;
+    }
+    return count;
+}
+
 
 /*
  * Prepends the specified data to the buffer. If sz is more than
@@ -245,4 +285,26 @@ BOOL buf_prepend (buffer_t *b, char *p, int sz)
      */
     COPY_MEMORY(b->data_off + b->data, p, sz);
     return TRUE;
+}
+
+/*
+ * Truncates the committed space in a buffer at the specified offset.
+ * If there is a previous call to buf_reserve without an intervening buf_commit
+ * buf_truncate will commit up to the offset (if applicable).
+ */
+void buf_truncate (buffer_t *b, int off)
+{
+    if (off > b->total)
+        return;
+
+    if (off <= 0) {
+        buf_reinit(b, b->data_off);
+        return;
+    }
+    
+    if (off <= b->data_used)
+        b->data_used = off;
+    b->total = off;
+    b->mark = off;
+    /* Note overflow need not change. */
 }
