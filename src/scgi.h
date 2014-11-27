@@ -59,21 +59,7 @@ typedef struct context {
     EXTENSION_CONTROL_BLOCK *ecbP; /* Passed in by IIS */
     SOCKET     so;              /* Socket to SCGI server */
     DWORD      refs;            /* Reference count */
-    unsigned short      state;
-#define CONTEXT_STATE_INIT         0
-#define CONTEXT_STATE_WRITE_SCGI   1
-#define CONTEXT_STATE_READ_CLIENT  2
-#define CONTEXT_STATE_READ_SCGI    3
-#define CONTEXT_STATE_WRITE_CLIENT 4
-#define CONTEXT_STATE_CONNECT_SCGI 5
-#define CONTEXT_STATE_CLOSING      6
-    unsigned short      flags;
-#define CONTEXT_F_ACTIVE        0x1
-#define CONTEXT_F_ASYNC_PENDING 0x2 /* If set, ovl, nioptr, ioptr, buf fields
-                                       must only be manipulated by the async
-                                       completion handler */
-#define CONTEXT_F_CLIENT_SENT   0x4 /* If set, we have sent some bytes to
-                                        client already */
+
     DWORD      expiration;     /* When session should be killed. */
     DWORD      client_bytes_remaining; /* Client bytes still remaining
                                           to be sent to SCGI server */
@@ -82,8 +68,47 @@ typedef struct context {
     char      *locker_source_file;
     int        locker_source_line;
 #endif
+
     int        nioptr;         /* How many ioptr[] are in use */
     WSABUF     ioptr[3];       /* Used for socket sends. */
+    
+
+    unsigned short      flags;
+#define CONTEXT_F_ACTIVE        0x1
+#define CONTEXT_F_ASYNC_PENDING 0x2 /* If set, ovl, nioptr, ioptr, buf fields
+                                       must only be manipulated by the async
+                                       completion handler */
+#define CONTEXT_F_CLIENT_SENT   0x4 /* If set, we have sent some bytes to
+                                        client already */
+#define CONTEXT_F_KEEPALIVE_SEEN 0x8 /* SCGI server returned keep-alive header */
+#define CONTEXT_F_LOCATION_SEEN 0x10 /* SCGI server returned location header */
+#define CONTEXT_F_CONTENT_TYPE_SEEN 0x20 /* SCGI server returned location header */
+
+    /* Main request states - see transition table at top of file */
+    unsigned char      state;
+#define CONTEXT_STATE_INIT         0
+#define CONTEXT_STATE_WRITE_SCGI   1
+#define CONTEXT_STATE_READ_CLIENT  2
+#define CONTEXT_STATE_READ_SCGI    3
+#define CONTEXT_STATE_WRITE_CLIENT 4
+#define CONTEXT_STATE_CONNECT_SCGI 5
+#define CONTEXT_STATE_CLOSING      6
+
+    /* SCGI response processing state. */
+    unsigned char       header_state;
+#define CONTEXT_HEADER_STATE_INIT  0     /* Starting header processing */
+#define CONTEXT_HEADER_STATE_CR    1     /* Seen single CR (carraige return) */
+#define CONTEXT_HEADER_STATE_CRLF  2     /* See one CRLF (CR + Line Feed) */
+#define CONTEXT_HEADER_STATE_LF    3     /* Seen lonely LF (no preceding CR) */
+#define CONTEXT_HEADER_STATE_CRLFCR 4    /* Seen CRLF followed immediately by CR */
+#define CONTEXT_HEADER_STATE_LINE   5    /* In the middle of parsing a line */
+#define CONTEXT_HEADER_STATE_DONE   6    /* Finished header parsing */
+
+
+    char      *status_line;    /* HTTP response status line */
+    int        status_nchars;  /* Length of status line */
+    int        header_bol;     /* Beginning of line offset into header buffer */
+    buffer_t   header;         /* Buffer used to store HTTP response header */
     buffer_t   buf;            /* Data buffer */
 } context_t;
 
@@ -99,5 +124,13 @@ BOOL scgi_try_enter_cs(context_t *cP, char *fn, int lineno);
 # define SCGI_TRY_ENTER_CONTEXT_CRIT_SEC(ctxP) TryEnterCriticalSection(&(ctxP)->cs)
 #endif
 
+
+__inline void *scgi_allocate_memory(DWORD sz) {
+    return HeapAlloc(GetProcessHeap(), 0, sz);
+}
+
+__inline void scgi_free_memory(void *p) {
+    HeapFree(GetProcessHeap(), 0, p);
+}
 
 #endif
