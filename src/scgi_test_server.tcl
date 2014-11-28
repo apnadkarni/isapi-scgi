@@ -1,9 +1,12 @@
-# Adapted from the Tcl wiki (http://wiki.tcl.tk
+# Adapted from the Tcl wiki (http://wiki.tcl.tk)
 
 package require html
-puts "Starting..."
 namespace eval scgi {
-    proc listen {port} {
+    variable non_parsed_headers 0
+
+    proc listen {port nph} {
+        variable non_parsed_headers
+        set non_parsed_headers $nph
         socket -server [namespace code connect] $port
     }
 
@@ -58,35 +61,51 @@ namespace eval scgi {
             handle_request $sock $headers $body
         }
     }
-}
 
-proc handle_request {sock headers body} {
-    array set Headers $headers
+    proc handle_request {sock headers body} {
+        variable non_parsed_headers
 
-    #parray Headers
-    #puts $body
-     puts $sock "Status: 200 OK\nContent-Type: text/html\n\n<HTML><BODY>[::html::tableFromArray Headers]<H3>Body</H3><PRE>$body</PRE>"
-    if {$Headers(REQUEST_METHOD) eq "GET"} {
-        puts $sock {<FORM METHOD="post" ACTION="/sandbox/isapi_scgi.dll">}
-        foreach pair [split $Headers(QUERY_STRING) &] {
-            lassign [split $pair =] key val
-            puts $sock "$key: [::html::textInput $key $val]<BR>"
+        array set Headers $headers
+
+        #puts $body
+        if {$non_parsed_headers} {
+            puts -nonewline $sock "HTTP/1.0 200 OK\nContent-Type: text/html\n\n"
+        } else {
+            puts -nonewline $sock "Status: 200 OK\nContent-Type: text/html\n\n"
         }
-        puts $sock "<BR><INPUT TYPE='submit' VALUE='Try POST'></FORM>"
-    } else {
-        puts $sock {<FORM METHOD="get" ACTION="/sandbox/isapi_scgi.dll">}
-        foreach pair [split $body &] {
-            lassign [split $pair =] key val
-            puts $sock "$key: [::html::textInput $key $val]<BR>"
+        puts $sock "<HTML><BODY>"
+        set Settings(Time) [clock format [clock seconds]]
+        set Settings(Non\ parsed\ headers) $non_parsed_headers
+        puts $sock "[::html::tableFromArray Settings] [::html::tableFromArray Headers]<H3>Body</H3><PRE>$body</PRE>"
+
+        if {$Headers(REQUEST_METHOD) eq "GET"} {
+            puts $sock "<FORM METHOD=\"post\" ACTION=\"$Headers(SCRIPT_NAME)\">"
+            foreach pair [split $Headers(QUERY_STRING) &] {
+                lassign [split $pair =] key val
+                puts $sock "$key: [::html::textInput $key $val]<BR>"
+            }
+            puts $sock "<BR><INPUT TYPE='submit' VALUE='Try POST'></FORM>"
+        } else {
+            puts $sock "<FORM METHOD=\"get\" ACTION=\"$Headers(SCRIPT_NAME)\">"
+            foreach pair [split $body &] {
+                lassign [split $pair =] key val
+                puts $sock "$key: [::html::textInput $key $val]<BR>"
+            }
+            puts $sock "<BR><INPUT TYPE='submit' VALUE='Try GET'></FORM>"
         }
-        puts $sock "<BR><INPUT TYPE='submit' VALUE='Try GET'></FORM>"
+        puts $sock "</BODY></HTML>"
+        close $sock
     }
-    puts $sock "</BODY></HTML>"
-    close $sock
 }
 
-if {[llength $::argv]} {
-    scgi::listen [lindex $::argv 0]
-} else {
-    scgi::listen 9999
+proc opt {k val} {
+    if {[dict exists $::argv $k]} {
+        return [dict get $::argv $k]
+    } else {
+        return $val
+    }
 }
+
+scgi::listen [opt -port 9999] [opt -nph 0]
+
+vwait forever

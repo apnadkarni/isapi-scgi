@@ -38,7 +38,7 @@ DWORD  g_healthy = FALSE;               /* Used to signal bad errors */
 WCHAR g_ini_path[MAX_PATH];
 
 /* Whether to use NonParsed Headers mode */
-int g_force_nph = 0;
+int g_non_parsed_headers = 0;
 
 /* Log settings */
 int g_log_level;                       /* How verbose? */
@@ -501,7 +501,7 @@ static BOOL read_scgi_extension_headers(void)
  */
 BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
 {
-    WCHAR  *extP;
+    WCHAR  *tailP;
     size_t     path_len;
     WORD    winsock_version = MAKEWORD(2,0);
     WSADATA winsock_data;
@@ -524,8 +524,7 @@ BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
 
     /*
      * Get the module location as that's where we will look for the
-     * log file and ini file. TBD - 
-     * should be changed to use the registry
+     * log file and ini file.
      */
     path_len = GetModuleFileNameW(
         g_module_instance,
@@ -537,32 +536,25 @@ BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
         return FALSE;
     }
 
-    /* Search for extension. Note we do not want to use C runtime! */
-    extP = path_len + g_ini_path;
-    while (extP != g_ini_path) {
-        if (*extP == L'.')
+    /* Search for path tail and replace it with the ini file name */
+    tailP = path_len + g_ini_path;
+    while (tailP != g_ini_path) {
+        --tailP;
+        if (*tailP == L'\\' || *tailP == L'/' || *tailP == ':') {
+            ++tailP;            /* Point beyond last dir separator */
             break;
-        --extP;
+        }
     }
 
-    if (extP != g_ini_path) {
-        /* Did find a extension, blow it away */
-        path_len = extP - g_ini_path;
-    } else {
-        /* No file name extension. Point extP beyond path */
-        path_len -= 1;          /* Do not include terminating null */
-        extP = path_len + g_ini_path;
-    }
+    /* tailP now points to end of dir name if any. */
 
-    /*
-     * extP now points to end of file path without extension.
-     * path_len is length without the terminating null
-     */
+    path_len = tailP - g_ini_path; /* Offset to end of dir name */
+
     
-    COPY_MEMORY(&g_ini_path[path_len], L".ini", sizeof(L".ini"));
+    COPY_MEMORY(tailP, L"isapi_scgi.ini", sizeof(L"isapi_scgi.ini"));
 
     /* Read all configuration values from the ini file */
-    g_force_nph = GetPrivateProfileIntW(
+    g_non_parsed_headers = GetPrivateProfileIntW(
         SCGI_ISAPI_INI_SECTION_NAME_W,
         L"NonParsedHeaders",
         0, // Parse headers by default
@@ -588,7 +580,7 @@ BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
          * Use default
          */
         COPY_MEMORY(g_log_path, g_ini_path, (sizeof(WCHAR)*path_len));
-        COPY_MEMORY(&g_log_path[path_len], L".log", sizeof(L".log"));
+        COPY_MEMORY(&g_log_path[path_len], L"isapi_scgi.log", sizeof(L"isapi_scgi.log"));
     }
 
     g_num_threads = GetPrivateProfileIntW(
@@ -687,7 +679,7 @@ BOOL WINAPI GetExtensionVersion(HSE_VERSION_INFO *  versionP)
         goto teardown_on_error;
     }
 
-    LOG_STARTUP(("Settings: NumThreads=%d, LogLevel=%d, IOCPQueueMax=%d, ContextTimeout=%d", g_num_threads, g_log_level, g_iocp_queue_max, g_context_timeout));
+    LOG_STARTUP(("Settings: NumThreads=%d, LogLevel=%d, IOCPQueueMax=%d, ContextTimeout=%d, NonParsedHeaders=%d", g_num_threads, g_log_level, g_iocp_queue_max, g_context_timeout, g_non_parsed_headers));
 
     /*
      * Now start up the SCGI server if so specified. We do this last so
@@ -2172,8 +2164,9 @@ void scgi_socket_handler(context_t *cP, DWORD nbytes)
         if (nbytes) {
             LOG_TRACE(("%d scgi_socket_handler(%x,%d) read %d bytes from server, writing to client.", GetCurrentThreadId(), cP, nbytes, nbytes));
 
-            if (g_force_nph || cP->header_state == CONTEXT_HEADER_STATE_DONE) {
-                /* g_force_nph - Non-parsed headers. SCGI server must send
+            if (g_non_parsed_headers ||
+                cP->header_state == CONTEXT_HEADER_STATE_DONE) {
+                /* g_non_parsed_headers - Non-parsed headers. SCGI server must send
                  * entire HTTP response. We stream this directly to
                  * client. Otherwise, if header processing is done, again
                  * we can stream directly to client.
