@@ -2007,8 +2007,6 @@ static int scgi_handle_response(context_t *cP, DWORD nbytes)
     char *p, *end, *dst, *dst_start;
     int space, status = NO_CLOSE;
 
-    __debugbreak();
-
     p = cP->ioptr[0].buf;
     end = p + nbytes;
 
