@@ -203,9 +203,8 @@ distribution: $(MODULE) LICENSE
 
 clean:
         -$(DEL) *.c~ *.h~
-        -$(DEL) $(OBJS)
-        -$(DEL) *.lib *.exp *.pdb *.res
-        -$(DEL) $(MODULE)
+        -cd $(OBJDIR) && $(DEL) *.obj *.lib *.exp *.pdb *.res
+        -$(DEL) "$(OBJDIR)\$(MODULE)"
 
 .c{$(OBJDIR)}.obj::
        $(CC) $(CFLAGS) -Fo$(OBJDIR)\ $<

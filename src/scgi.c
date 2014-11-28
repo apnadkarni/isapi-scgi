@@ -1910,7 +1910,6 @@ int scgi_process_header_line(context_t *cP)
         cP->status_line = scgi_allocate_memory(cP->status_nchars);
         buf_copy_data(&cP->header, cP->header_bol, cP->status_line, cP->status_nchars);
         buf_truncate(&cP->header, cP->header_bol); /* Erase status line */
-        return NO_CLOSE;
     } else if ((ch == 'L' || ch == 'l') && lstrcmpi(key+1, "ocation:") == 0) {
         /* For now, just remember we have seen a location header */
         cP->flags |= CONTEXT_F_LOCATION_SEEN;
@@ -1929,6 +1928,9 @@ int scgi_process_header_line(context_t *cP)
                 cP->flags |= CONTEXT_F_KEEPALIVE_SEEN;
         }
     }
+
+    /* Update marker for next line */
+    cP->header_bol = buf_count(&cP->header);
 
     return NO_CLOSE;
 }
@@ -2197,6 +2199,14 @@ void scgi_socket_handler(context_t *cP, DWORD nbytes)
                 reason_for_close = scgi_handle_response(cP, nbytes);
                 if (reason_for_close != NO_CLOSE)
                     goto end_session;
+                if (cP->state == CONTEXT_STATE_READ_SCGI) {
+                    /* State has not changed. Issue another read on SCGI side */
+                    LOG_TRACE(("%d scgi_socket_handler(%x). Reading more data from server.", GetCurrentThreadId(), cP));
+                    if (initiate_scgi_socket_read(cP) != NO_ERROR) {
+                        reason_for_close = SCGI_ERROR_CLOSE;
+                        goto end_session;
+                    }
+                }
             }
         }
         else {
