@@ -8,7 +8,6 @@
 A multithreaded, IOCP-based, ISAPI extension for the Simple Common Gateway
 Protocol.
 
-
 The +isapi_scgi+ ISAPI extension for Microsoft IIS implements the Simple
 Common Gateway Interface (SCGI). SCGI is a standard for communicating
 with web servers on the back end. Requests received by IIS are passed
@@ -37,16 +36,15 @@ compatibility.
 
 +isapi_scgi+ has the following features:
 
-* Supports Microsoft IIS versions 5.1 and 6.0. IIS 7 is untested.
+* Supports Microsoft IIS versions 6, 7 and 8.
 * Can optionally start the SCGI application server automatically
-  (requires at least V0.6)
 * Ability to control parameters like number of threads, outstanding
   IOCP requests etc. for tuning to your particular environment.
 * Implemented as an ISAPI C extension and uses I/O completion ports
   for minimal memory and CPU usage
-* No other dependencies (not even the C runtime so you don't have to
-  worry about existence of MSVCRT80, MSVRT90 etc. on the target
-  system)
+* Supports non-parsed headers
+* No other dependencies. Even the C runtime is either not needed
+  or is statically bound
 * Open source with a liberal BSD license that allows free use even in
   commercial environments.
 
@@ -103,6 +101,34 @@ Finally, stop and restart IIS and the default Web site. The +isapi_scgi+
 extension will now be invoked whenever a request for a URL beginning
 with +/sandbox/isapi_scgi.dll+ is received.
 
+== Non-parsed headers
+
+The SCGI specification states:
+
+****
+When the SCGI server sees the end of the request it sends back a
+response and closes the connection. The format of the response is not
+specified by this protocol.
+****
+
+Two formats for the response are supported by `isapi_scgi` corresponding
+to the equivalent CGI specification defined by 
+http://www.ietf.org/rfc/rfc3875[RFC3875].
+
+In the normal CGI case, the SCGI server sends a header section
+separated from the body by a blank line. The header may contain
+a 'Status:' line indicating the HTTP status. If absent, a status
+of "200 Ok" is assumed.
+
+The non-parsed header (NPH) case is enabled when the 
+`NonParsedHeaders` configuration setting is set to a non-0 value.
+In this case, `isapi_scgi` passes all bytes sent from the SCGI
+server back to the client with no modification at all. In this
+case, the SCGI server is responsible for appropriately setting
+all HTTP headers.
+
+See RFC3875 for more detail on these options.
+
 == Configuring +isapi_scgi+
 
 +isapi_scgi+ is configured through the +isapi_scgi.ini+ file which
@@ -136,6 +162,10 @@ not match your desired configuration.
 |+LogLevel+
 |Verbosity of logging. 0 turns off, 1 logs only errors.
 |1
+
+|+NonParsedHeaders+
+|Whether non-parsed headers (NPH) are in use. 1 to turn on NPH, 0 to turn off.
+|0
 
 |+NumThreads+
 |Integer value corresponding to the number of worker threads to be run.
@@ -201,31 +231,6 @@ The messages logged can be controlled by setting the +LogLevel+. By
 default, only errors are logged (+LogLevel=1+). Setting its value to +0+
 will turn off all logging and setting it to +2+ will log informational
 messages as well as errors, including connection requests.
-
-== Compatibility with SCGI applications
-
-+isapi_scgi+ implements the SCGI specification and should be
-compatible with any application following that specification. However,
-there is one issue with some current applications. The specification
-states:
-
-****
-When the SCGI server sees the end of the request it sends back a
-response and closes the connection. The format of the response is not
-specified by this protocol.
-****
-
-Currently, +isapi_scgi+ sends the SCGI server application response back
-to the client with no modifications at all. The application is
-responsible for generating all HTTP headers, content, etc. However,
-some applications expect the SCGI handler in the web servers to parse
-the response and convert a dummy +Status:+ header into a HTTP status
-response line. +isapi_scgi+ does not currently do this and expects the
-application to generate the full response. Such applications may have
-to be modified.
-
-It is possible a future version of +isapi_scgi+ may optionally
-implement this behaviour.
 
 == Isapi_scgi support and source code 
 
