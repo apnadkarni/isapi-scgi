@@ -211,12 +211,42 @@ struct scgi_header_def {
 };
 
 struct scgi_header_def g_scgi_headers[] = {
+    /* CGI defined headers */
+
     STR_AND_LEN(CONTENT_LENGTH),       /* Must be first */
-    STR_AND_LEN(APPL_MD_PATH),
-    STR_AND_LEN(APPL_PHYSICAL_PATH),
-    STR_AND_LEN(AUTH_PASSWORD),
     STR_AND_LEN(AUTH_TYPE),
-    STR_AND_LEN(AUTH_USER),
+    STR_AND_LEN(CONTENT_TYPE),
+    STR_AND_LEN(GATEWAY_INTERFACE),
+    STR_AND_LEN(PATH_INFO),
+    STR_AND_LEN(PATH_TRANSLATED),
+    STR_AND_LEN(QUERY_STRING),
+    STR_AND_LEN(REMOTE_ADDR),
+    STR_AND_LEN(REMOTE_HOST),
+    STR_AND_LEN(REMOTE_USER),
+    STR_AND_LEN(REQUEST_METHOD),
+    STR_AND_LEN(SCRIPT_NAME),
+    STR_AND_LEN(SERVER_NAME),
+    STR_AND_LEN(SERVER_PORT),
+    STR_AND_LEN(SERVER_PROTOCOL),
+    STR_AND_LEN(SERVER_SOFTWARE),
+
+    /* Additional HTTP headers */
+    STR_AND_LEN(HTTP_CONNECTION),
+    STR_AND_LEN(HTTP_ACCEPT),
+    STR_AND_LEN(HTTP_ACCEPT_ENCODING),
+    STR_AND_LEN(HTTP_ACCEPT_LANGUAGE),
+    STR_AND_LEN(HTTP_COOKIE),
+    STR_AND_LEN(HTTP_HOST),
+    STR_AND_LEN(HTTP_USER_AGENT),
+    STR_AND_LEN(HTTP_UA_CPU),
+};
+
+struct scgi_header_def g_scgi_https_headers[] = {
+    STR_AND_LEN(HTTPS),
+    STR_AND_LEN(HTTPS_KEYSIZE),
+    STR_AND_LEN(HTTPS_SECRETKEYSIZE),
+    STR_AND_LEN(HTTPS_SERVER_ISSUER),
+    STR_AND_LEN(HTTPS_SERVER_SUBJECT),
     STR_AND_LEN(CERT_COOKIE),
     STR_AND_LEN(CERT_FLAGS),
     STR_AND_LEN(CERT_ISSUER),
@@ -226,43 +256,9 @@ struct scgi_header_def g_scgi_headers[] = {
     STR_AND_LEN(CERT_SERVER_ISSUER),
     STR_AND_LEN(CERT_SERVER_SUBJECT),
     STR_AND_LEN(CERT_SUBJECT),
-    STR_AND_LEN(CONTENT_TYPE),
-    STR_AND_LEN(GATEWAY_INTERFACE),
-    STR_AND_LEN(HTTPS),
-    STR_AND_LEN(HTTPS_KEYSIZE),
-    STR_AND_LEN(HTTPS_SECRETKEYSIZE),
-    STR_AND_LEN(HTTPS_SERVER_ISSUER),
-    STR_AND_LEN(HTTPS_SERVER_SUBJECT),
-    STR_AND_LEN(INSTANCE_ID),
-    STR_AND_LEN(INSTANCE_META_PATH),
-    STR_AND_LEN(LOCAL_ADDR),
-    STR_AND_LEN(LOGON_USER),
-    STR_AND_LEN(PATH_INFO),
-    STR_AND_LEN(PATH_TRANSLATED),
-    STR_AND_LEN(QUERY_STRING),
-    STR_AND_LEN(REMOTE_ADDR),
-    STR_AND_LEN(REMOTE_HOST),
-    STR_AND_LEN(REMOTE_USER),
-    STR_AND_LEN(REQUEST_METHOD),
-    STR_AND_LEN(SERVER_NAME),
-    STR_AND_LEN(SCRIPT_NAME),
-    STR_AND_LEN(SERVER_PORT),
-    STR_AND_LEN(SERVER_PORT_SECURE),
-    STR_AND_LEN(SERVER_PROTOCOL),
-    STR_AND_LEN(SERVER_SOFTWARE),
-    STR_AND_LEN(URL),
-    STR_AND_LEN(HTTP_CONNECTION),
-    STR_AND_LEN(HTTP_ACCEPT),
-    STR_AND_LEN(HTTP_ACCEPT_ENCODING),
-    STR_AND_LEN(HTTP_ACCEPT_LANGUAGE),
-    STR_AND_LEN(HTTP_COOKIE),
-    STR_AND_LEN(HTTP_HOST),
-    STR_AND_LEN(HTTP_USER_AGENT),
-    STR_AND_LEN(HTTP_UA_CPU),
-    /* Headers added by URL rewriters */
-    STR_AND_LEN(HTTP_X_ORIGINAL_URL), /* mod_rewrite */
-    STR_AND_LEN(HTTP_X_REWRITE_URL)   /* IIRF */
 };
+
+
 /* SCGI extension header names - read in from ini file */
 struct scgi_header_def *g_scgi_extension_headersP = NULL;
 int g_scgi_extension_header_count = 0;    
@@ -1529,11 +1525,10 @@ static int scgi_build_headers_helper(context_t *cP,
      * space - amount of space reserved but not committed in buffer
      * p - pointer to that space
      * pending_commit - count of data to be committed
+     * Note we need to commit even if pending_commit is 0 to cancel
+     * out the buf_reserve
      */
-    if (pending_commit) {
-        buf_commit(&cP->buf, pending_commit);
-        /* No need - pending_commit = 0; */
-    }
+    buf_commit(&cP->buf, pending_commit);
 
     return 1;
 }
