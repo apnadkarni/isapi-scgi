@@ -67,7 +67,6 @@ namespace eval scgi {
 
         array set Headers $headers
 
-        #puts $body
         if {$non_parsed_headers} {
             puts -nonewline $sock "HTTP/1.0 200 OK\nContent-Type: text/html\n\n"
         } else {
