@@ -221,6 +221,7 @@ struct scgi_header_def g_scgi_headers[] = {
     STR_AND_LEN(SCRIPT_NAME),
     STR_AND_LEN(SERVER_NAME),
     STR_AND_LEN(SERVER_PORT),
+    STR_AND_LEN(SERVER_PORT_SECURE),
     STR_AND_LEN(SERVER_PROTOCOL),
     STR_AND_LEN(SERVER_SOFTWARE),
 
@@ -1575,7 +1576,7 @@ static int scgi_build_headers(context_t *cP)
 {
     char *p;
     EXTENSION_CONTROL_BLOCK *ecbP = cP->ecbP;
-    int   needed, space;
+    int   space;
     char  temp[32];
     int   len;
 
@@ -1603,6 +1604,19 @@ static int scgi_build_headers(context_t *cP)
         == 0) {
         return 0;
     }        
+
+    /* See if HTTPS on and retrieve corresponding variables */
+    len = sizeof(temp);
+    if (ecbP->GetServerVariable(ecbP->ConnID, "HTTPS", temp, &len) == TRUE) {
+        WRITE_HEADER_LINE(HTTPS, temp);
+        if (lstrcmpiA(temp, "on") == 0) {
+            if (scgi_build_headers_helper(cP, g_scgi_https_headers,
+                                          sizeof(g_scgi_https_headers)/sizeof(g_scgi_https_headers[0])) == 0) {
+            return 0;
+            }
+        }
+    }
+
     if (scgi_build_headers_helper(cP, g_scgi_extension_headersP,
                                   g_scgi_extension_header_count) == 0) {
         return 0;
@@ -1631,11 +1645,6 @@ static int scgi_build_headers(context_t *cP)
     wsprintf(temp, "%d:", buf_count(&cP->buf) - 1);
     LOG_TRACE(("%d scgi_build_headers(%x) calling buf_prepend and returning.", GetCurrentThreadId(), cP));
     return buf_prepend(&cP->buf, temp, lstrlen(temp));
-
-    alloc_error:
-        log_write("Could not allocate space for SCGI headers.");
-        return 0;
-
 }
 
 

@@ -117,7 +117,8 @@ of the request:
 `AUTH_TYPE`, `CONTENT_LENGTH`, `CONTENT_TYPE`, `GATEWAY_INTERFACE`,
 `PATH_INFO`, `PATH_TRANSLATED`, `QUERY_STRING`, `REMOTE_ADDR`,
 `REMOTE_HOST`, `REMOTE_USER`, `REQUEST_METHOD`, `SCRIPT_NAME`,
-`SERVER_NAME`, `SERVER_PORT`, `SERVER_PROTOCOL` and `SERVER_SOFTWARE`.
+`SERVER_NAME`, `SERVER_PORT`, `SERVER_PORT_SECURE`,
+`SERVER_PROTOCOL` and `SERVER_SOFTWARE`.
 
 In addition, it passes the following protocol specific headers
 if they were present in the client request:
