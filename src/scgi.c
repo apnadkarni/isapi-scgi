@@ -212,14 +212,8 @@ struct scgi_header_def {
 
 struct scgi_header_def g_scgi_headers[] = {
     /* CGI defined headers */
-
-    STR_AND_LEN(CONTENT_LENGTH),       /* Must be first */
     STR_AND_LEN(AUTH_TYPE),
-    STR_AND_LEN(CONTENT_TYPE),
     STR_AND_LEN(GATEWAY_INTERFACE),
-    STR_AND_LEN(PATH_INFO),
-    STR_AND_LEN(PATH_TRANSLATED),
-    STR_AND_LEN(QUERY_STRING),
     STR_AND_LEN(REMOTE_ADDR),
     STR_AND_LEN(REMOTE_HOST),
     STR_AND_LEN(REMOTE_USER),
@@ -1420,6 +1414,18 @@ static int scgi_build_headers_helper(context_t *cP,
     LOG_TRACE(("%d scgi_build_headers_helper(%x) enter.", GetCurrentThreadId(), cP));
 
     /*
+     * We will retrieve headers one by one and copy them into the
+     * iocp buffers for sending to the SCGI server. The code below tries
+     * to minimize byte copies and allocations (note *tries*, not
+     * *ensures*!). We get the location of the contiguous space in the buffer
+     * and pass it on to the GetServerVariable function repeatedly
+     * which can directly copy it there. If that fails, then we ask the
+     * buffer to grow the free contiguous space. This should be faster
+     * than first finding the lengths and then allocating and then
+     * copying. We hope.
+     */
+
+    /*
      * p will point to contiguous space within the buffer where we can copy
      * space will be size of p[]
      * pending_commit is number of bytes we have written to p[]
@@ -1533,7 +1539,33 @@ static int scgi_build_headers_helper(context_t *cP,
     return 1;
 }
 
+/*
+ * Copies a single header name and value into target buffer.
+ * namelen should include terminating \0
+ * Returns 1 on success, 0 on failure.
+ * Target buffer is manipulated so any existing pointers into it MAY be
+ * invalid on return.
+ */
+static int scgi_write_one_header(buffer_t *b, char name[], int namelen, char *value)
+{
+    int len, space;
+    char *p;
 
+    len = lstrlenA(value) + 1;  /* With terminating \0 */
+    space = len + namelen;
+    p = buf_reserve(b, &space, BUF_RESERVE_ALLOW_MOVE);
+    /* Note space may be modified in above call */
+    if (p == NULL) {
+        log_write("Could not allocate space for SCGI headers.");
+        return 0;
+    }
+
+    COPY_MEMORY(p, name, namelen);
+    COPY_MEMORY(p+namelen, value, len);
+    buf_commit(b, len + namelen);
+
+    return 1;
+}
 
 /*
  * Build the SCGI headers in the context buffer.
@@ -1542,23 +1574,30 @@ static int scgi_build_headers_helper(context_t *cP,
 static int scgi_build_headers(context_t *cP)
 {
     char *p;
-    int   space;
+    EXTENSION_CONTROL_BLOCK *ecbP = cP->ecbP;
+    int   needed, space;
     char  temp[32];
+    int   len;
 
     LOG_TRACE(("%d scgi_build_headers(%x) enter.", GetCurrentThreadId(), cP));
 
     /*
-     * We will retrieve headers one by one and copy them into the
-     * iocp buffers for sending to the SCGI server. The code below tries
-     * to minimize byte copies and allocations (note *tries*, not
-     * *ensures*!). We get the location of the contiguous space in the buffer
-     * and pass it on to the GetServerVariable function repeatedly
-     * which can directly copy it there. If that fails, then we ask the
-     * buffer to grow the free contiguous space. This should be faster
-     * than first finding the lengths and then allocating and then
-     * copying. We hope.
+     * First write out the SCGI headers that are directly available.
      */
-    
+#define WRITE_HEADER_LINE(name, val) \
+    do { \
+        if (scgi_write_one_header(&cP->buf, #name, sizeof(#name), val) == 0) \
+            return 0; \
+    } while (0)
+
+    /* Note: CONTENT_LENGTH must be first header */
+    wsprintf(temp, "%u", ecbP->cbTotalBytes);
+    WRITE_HEADER_LINE(CONTENT_LENGTH, temp);
+    WRITE_HEADER_LINE(PATH_INFO, ecbP->lpszPathInfo);
+    WRITE_HEADER_LINE(PATH_TRANSLATED, ecbP->lpszPathTranslated);
+    WRITE_HEADER_LINE(QUERY_STRING, ecbP->lpszQueryString);
+    WRITE_HEADER_LINE(CONTENT_TYPE, ecbP->lpszContentType);
+
     if (scgi_build_headers_helper(cP, &g_scgi_headers[0],
                                   sizeof(g_scgi_headers)/sizeof(g_scgi_headers[0]))
         == 0) {
@@ -1592,6 +1631,11 @@ static int scgi_build_headers(context_t *cP)
     wsprintf(temp, "%d:", buf_count(&cP->buf) - 1);
     LOG_TRACE(("%d scgi_build_headers(%x) calling buf_prepend and returning.", GetCurrentThreadId(), cP));
     return buf_prepend(&cP->buf, temp, lstrlen(temp));
+
+    alloc_error:
+        log_write("Could not allocate space for SCGI headers.");
+        return 0;
+
 }
 
 
