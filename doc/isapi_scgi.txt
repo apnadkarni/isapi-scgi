@@ -9,7 +9,7 @@
 A multithreaded, IOCP-based, ISAPI extension for the Simple Common Gateway
 Protocol.
 
-The +isapi_scgi+ ISAPI extension for Microsoft IIS implements the Simple
+The `isapi_scgi` ISAPI extension for Microsoft IIS implements the Simple
 Common Gateway Interface (SCGI). SCGI is a standard for communicating
 with web servers on the back end. Requests received by IIS are passed
 on to the application server over the SCGI protocol and the response
@@ -28,13 +28,13 @@ to CGI:
 application code can actually run on a different server if desired for
 performance or security reasons.  
 
-This guide describes +isapi_scgi+
+This guide describes `isapi_scgi`
 installation and usage but assumes you know how to configure your SCGI
 application server.
 
-== Isapi_scgi features
+== Features
 
-+isapi_scgi+ has the following features:
+`isapi_scgi` has the following features:
 
 * Supports Microsoft IIS versions 6, 7 and 8.
 * Can optionally start the SCGI application server automatically
@@ -48,17 +48,17 @@ application server.
 * Open source with a liberal BSD license that allows free use even in
   commercial environments.
 
-== Downloading +isapi_scgi+
+== Downloading isapi_scgi
 
-The latest version of +isapi_scgi+ can be downloaded from the +Files+
+The latest version of `isapi_scgi` can be downloaded from the `Files`
 section of the 
 http://sourceforge.net/projects/isapi-scgi[Sourceforge]
-+isapi_scgi+ project.
+`isapi_scgi` project.
 Extract
 the files into a temporary folder before following the instructions
 for installation.
 
-== Installing +isapi_scgi+
+== Installing isapi_scgi
 
 [IMPORTANT]
 The examples and description in this document refer to the extension
@@ -68,13 +68,18 @@ installing on 64-bit systems, either rename it to `isapi_scgi.dll` or
 use `isapi_scgi64.dll` in place of `isapi_scgi.dll` in all instructions
 below. Note the configuration file name is always `isapi_scgi.ini`.
 
-+isapi_scgi+ is installed like any other ISAPI extension. The sample
-session below illustrates installation under IIS 5.1 on Windows XP. It
-assumes a simple configuration where the extension will be accessed
-under +/sandbox/isapi_scgi.dll/+. All requests to URLs below this will
+`isapi_scgi` is installed like any other ISAPI extension. The sample
+sessions below illustrate installation under IIS 6 on Windows XP and
+IIS 8 on Windows 8. Installation for other IIS versions are very
+similar.
+
+We assume a simple configuration where the extension will be accessed
+under `/sandbox/isapi_scgi.dll/`. All requests to URLs below this will
 be passed by the extension to the SCGI server. Obviously you may use
 techniques such as URL rewriting to hide the use of the DLL but that
 is not described here.
+
+=== Installing for IIS 6
 
 Start up the MMC IIS manager and create a new virtual directory,
 sandbox, under the default Web site as shown in the screenshot below.
@@ -87,27 +92,93 @@ properties as shown below.
 image:mmc_sandbox_properties.png[]
 
 We have mapped the sandbox virtual directory to a physical directory,
-+c:\scgi-example+, on the local system. The important thing to note in
+`c:\scgi-example`, on the local system. The important thing to note in
 the above configuration screen is that 'Execute Permissions' have been
 set to 'Scripts and Executables'. This is required for ISAPI extensions
 to be enabled for the virtual directory. Also, setting the 'Application
 Protection' value to 'Low' instead of 'Medium' as above will give higher
 performance.
 
-Copy the +isapi_scgi.dll+ from the temporary directory where you
+Copy the `isapi_scgi.dll` from the temporary directory where you
 extracted the distribution into the physical directory,
-+c:\scgi-example+, in the above example. The IIS manager console will
+`c:\scgi-example`, in the above example. The IIS manager console will
 look as follows after refreshing.
 
 image:mmc_sandbox_content.png[]
 
+The extension is now installed.
+
+=== Installing for IIS 8
+
+We now illustrate installing `isapi_scgi` for IIS 8, this time using
+the 64-bit extension `isapi_scgi64.dll`.
+
+Start up the IIS manager and right-click on the `Default Web Site`
+node to bring up the menu.
+
+image:iis8_add_virtual_directory.png[]
+
+Select the `Add Virtual Directory...` menu item and fill the dialog
+that comes up as shown.
+
+image:iis8_add_virtual_directory_entry.png[]
+
+We have mapped the sandbox virtual directory to a physical directory,
+`c:\scgi-example`, on the local system. 
+Copy the `isapi_scgi64.dll` to this physical directory.
+
+Now select the newly created `sandbox` virtual directory node and in the middle
+plane double click the `Handler Mappings` item.
+
+image:iis8_sandbox.png[]
+
+This will bring up the handler settings for the `sandbox` virtual directory
+as shown below. Note that ISAPI is disabled and needs to be enabled. To
+do this, select the `ISAPI-dll` line and click the `Edit Feature Permissions...`
+item in the `Actions` pane.
+
+image:iis8_sandbox_handler_mapping.png[]
+
+Fill out the dialog as shown below ensuring all checkboxes are selected.
+
+image:iis8_sandbox_handler_mapping_entry.png[]
+
+On clicking `OK` in the above dialog, you should see `ISAPI-dll` enabled
+in the `Handler Mappings` pane for the `sandbox` virtual directory.
+
+image:iis8_sandbox_handler_mapping_enabled.png[]
+
+This is required for ISAPI extensions
+to be enabled for the virtual directory.
+
+There is one final step needed. By default, IIS will not allow unknown
+extensions to run so we need to add it to the system-wide list of
+permitted ISAPI extensions. To do this, select the system node
+in IIS Manager and double click the `ISAPI and CGI Restriction` item
+in the middle pane.
+
+image:iis8_isapi_restriction.png[]
+
+Click the `Add` item in the `Actions` pane and fill the presented dialog
+as below.
+
+image:iis8_isapi_restriction_entry.png[]
+
+Click OK to save the configuration.
+
+The extension is now installed.
+
+=== Final steps
+
 If you are not running the default SCGI server address and port,
 follow the steps described in the configuration section to set up
-+isapi_scgi+ options.
+`isapi_scgi` options.
 
-Finally, stop and restart IIS and the default Web site. The +isapi_scgi+
+Finally, stop and restart IIS and the default Web site. The `isapi_scgi`
 extension will now be invoked whenever a request for a URL beginning
-with +/sandbox/isapi_scgi.dll+ is received.
+with `/sandbox/isapi_scgi.dll` or `/sandbox/isapi_scgi64.dll` is received
+as appropriate.
+
 
 == SCGI request headers
 
@@ -199,13 +270,13 @@ to the client.
 
 See RFC3875 for more details.
 
-== Configuring +isapi_scgi+
+== Configuring isapi_scgi
 
-+isapi_scgi+ is configured through the +isapi_scgi.ini+ file which
-must be located in the same directory as the +isapi_scgi.dll+
+`isapi_scgi` is configured through the `isapi_scgi.ini` file which
+must be located in the same directory as the `isapi_scgi.dll`
 extension. This file is in the standard Windows INI file format and
 may contain the variables described below. These must be defined in
-the +[SCGI]+ section of the file.
+the `[SCGI]` section of the file.
 
 Note that the file is only needed if the defaults described below do
 not match your desired configuration.
@@ -217,52 +288,53 @@ not match your desired configuration.
 |Description
 |Default
 
-|+IOCPQueueMax+
+|`IOCPQueueMax`
 |Integer value corresponding to the maximum number of queued IOCP requests.
 |50
 
-|+KeepStatistics+
+|`KeepStatistics`
 |If non-0, the extension keeps certain statistics that can be useful in troubleshooting or tuning.
 |0
 
-|+LogFile+
+|`LogFile`
 |Path to the log file.	
-|+isapi_scgi.log+ in the same directory as +isapi_scgi.dll+.
+|`isapi_scgi.log` in the same directory as `isapi_scgi.dll`.
 
-|+LogLevel+
+|`LogLevel`
 |Verbosity of logging. 0 turns off, 1 logs only errors.
 |1
 
-|+NonParsedHeaders+
-|Whether non-parsed headers (NPH) are in use. 1 to turn on NPH, 0 to turn off.
+|`NonParsedHeaders`
+|Whether <<_scgi_response_headers, non-parsed headers>> (NPH) are in use. 1 to turn on NPH, 0 to turn off.
 |0
 
-|+NumThreads+
+|`NumThreads`
 |Integer value corresponding to the number of worker threads to be run.
 |10
 
-|+SCGIServerAddress+
+|`SCGIServerAddress`
 |IP address of the SCGI server.
 |127.0.0.1
 
-|+SCGIServerPort+
+|`SCGIServerPort`
 |Port the SCGI server is listening on.
 |9999
 
 |SCGIServerStartCommand
-|Command to execute start the SCGI application server. See Starting the SCGI server automatically.
+|Command to execute to start the SCGI application server. 
+See <<Starting SCGI servers automatically>>.
 |None. No server is started by default.
 
-|+SCGIServerStopCommand+
+|`SCGIServerStopCommand`
 |Command to execute stop the SCGI application server. See Starting the SCGI server automatically.
 |None.
 
-|+StatisticsLogInterval+
+|`StatisticsLogInterval`
 |Controls how often statistics are written to the log file. The interval is given in seconds.
 |60
 |===
 
-The optimal values for +NumThreads+ and +IOCPQueueMax+ depend on the
+The optimal values for `NumThreads` and `IOCPQueueMax` depend on the
 system (memory, number of processors and their speed, etc.) and
 configuration (for example, whether the SCGI server on a different
 system). On heavily loaded systems, you should determine these values
@@ -271,19 +343,19 @@ empirically through load testing.
 == Starting SCGI servers automatically
 
 You may choose to start your SCGI server automatically and
-independently of IIS. Alternatively, you can configure +isapi_scgi+ to
+independently of IIS. Alternatively, you can configure `isapi_scgi` to
 start the server automatically when the first request is received and
 to shut it down when IIS unloads the extension (for example, when IIS
 is shut down).
 
-To have +isapi_scgi+ automatically start the SCGI server, set the
-configuration variable +SCGIServerStartCommand+. The value must be the
-full command including a full path and arguments, if any. +isapi_scgi+
+To have `isapi_scgi` automatically start the SCGI server, set the
+configuration variable `SCGIServerStartCommand`. The value must be the
+full command including a full path and arguments, if any. `isapi_scgi`
 will execute this command without any validation or error
-checking. Similarly, to have +isapi_scgi+ automatically shut down the
-SCGI server, set the configuration variable +SCGIServerStopCommand+. For
-example, if your SCGI server runs as the Windows service +myscgiapp+,
-you might have the following two lines in the +isapi_scgi+ configuration
+checking. Similarly, to have `isapi_scgi` automatically shut down the
+SCGI server, set the configuration variable `SCGIServerStopCommand`. For
+example, if your SCGI server runs as the Windows service `myscgiapp`,
+you might have the following two lines in the `isapi_scgi` configuration
 file:
 
 ----
@@ -291,26 +363,26 @@ SCGIServerStartCommand= net start myscgiapp
 SCGIServerStopCommand= net stop myscgiapp
 ----
 
-== Logging in +isapi_scgi+
+== Logging in isapi_scgi
 
-By default, +isapi_scgi+ will log to the file +isapi_scgi.log+ in the same
-directory where +isapi_scgi.dll+ is located. This can be changed by
-setting the +LogFile+ variable in the configuration.
+By default, `isapi_scgi` will log to the file `isapi_scgi.log` in the same
+directory where `isapi_scgi.dll` is located. This can be changed by
+setting the `LogFile` variable in the configuration.
 
-The messages logged can be controlled by setting the +LogLevel+. By
-default, only errors are logged (+LogLevel=1+). Setting its value to +0+
-will turn off all logging and setting it to +2+ will log informational
+The messages logged can be controlled by setting the `LogLevel`. By
+default, only errors are logged (`LogLevel=1`). Setting its value to `0`
+will turn off all logging and setting it to `2` will log informational
 messages as well as errors, including connection requests.
 
 == Isapi_scgi support and source code 
 
-Support for +isapi_scgi+ can be obtained through the
+Support for `isapi_scgi` can be obtained through the
 http://sourceforge.net/p/isapi-scgi/tickets/[Tickets]
 section of the
 http://sourceforge.net/projects/isapi-scgi[SourceForge]
-+isapi_scgi+ project.
+`isapi_scgi` project.
 
-The source code for +isapi_scgi+ is also available through
+The source code for `isapi_scgi` is also available through
 http://sourceforge.net/projects/isapi-scgi[Sourceforge]
 and is covered by a BSD license that allows free use for any
 purpose.
