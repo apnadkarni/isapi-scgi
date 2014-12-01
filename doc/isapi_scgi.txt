@@ -1,7 +1,7 @@
 :toc:
 :icons: font
 
-= SCGI extension for Microsoft IIS
+= isapi_scgi 0.8 - SCGI extension for Microsoft IIS
 
 // To build,
 // asciidoc.py -a data-uri -a icons -a toc -a max-width=55em isapi_scgi.txt
@@ -179,6 +179,13 @@ extension will now be invoked whenever a request for a URL beginning
 with `/sandbox/isapi_scgi.dll` or `/sandbox/isapi_scgi64.dll` is received
 as appropriate.
 
+=== Upgrading from earlier versions
+
+Please note that beginning with Version 0.8, `isapi_scgi` will parse
+SCGI response headers by default. This differs from earlier releases
+which only supported non-parsed headers operation. To keep the
+earlier behaviour, the `NonParsedHeaders` configuration option must be set to
+a non-0 value. See <<SCGI response headers>>.
 
 == SCGI request headers
 
@@ -259,7 +266,8 @@ http://www.ietf.org/rfc/rfc3875[RFC3875].
 In the normal CGI case, the SCGI server sends a response header
 separated from the body by a blank line. The header may contain
 a 'Status:' line indicating the HTTP status. If absent, a status
-of "200 Ok" is assumed.
+of "200 Ok" is assumed. The `isapi_scgi` extension will then generate
+HTTP headers based on the SCGI response headers.
 
 The non-parsed header (NPH) case is enabled when the 
 `NonParsedHeaders` configuration setting is set to a non-0 value.
@@ -268,7 +276,7 @@ server back to the client with no modification at all.
 The SCGI server is responsible for the entire content passed back
 to the client.
 
-See RFC3875 for more details.
+See RFC3875 for more details about these behaviours.
 
 == Configuring isapi_scgi
 
@@ -359,6 +367,7 @@ you might have the following two lines in the `isapi_scgi` configuration
 file:
 
 ----
+[SCGI]
 SCGIServerStartCommand= net start myscgiapp
 SCGIServerStopCommand= net stop myscgiapp
 ----
@@ -374,7 +383,7 @@ default, only errors are logged (`LogLevel=1`). Setting its value to `0`
 will turn off all logging and setting it to `2` will log informational
 messages as well as errors, including connection requests.
 
-== Isapi_scgi support and source code 
+== Support and source code 
 
 Support for `isapi_scgi` can be obtained through the
 http://sourceforge.net/p/isapi-scgi/tickets/[Tickets]
