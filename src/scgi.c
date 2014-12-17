@@ -210,6 +210,8 @@ struct scgi_header_def {
     int len;
 };
 
+/* NOTE: headers that are directly available from the ecb structure
+   are not listed here */
 struct scgi_header_def g_scgi_headers[] = {
     /* CGI defined headers */
     STR_AND_LEN(AUTH_TYPE),
@@ -232,6 +234,7 @@ struct scgi_header_def g_scgi_headers[] = {
     STR_AND_LEN(HTTP_ACCEPT_LANGUAGE),
     STR_AND_LEN(HTTP_COOKIE),
     STR_AND_LEN(HTTP_HOST),
+    STR_AND_LEN(HTTP_REFERER),
     STR_AND_LEN(HTTP_USER_AGENT),
     STR_AND_LEN(HTTP_UA_CPU),
 
