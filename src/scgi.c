@@ -234,6 +234,9 @@ struct scgi_header_def g_scgi_headers[] = {
     STR_AND_LEN(HTTP_HOST),
     STR_AND_LEN(HTTP_USER_AGENT),
     STR_AND_LEN(HTTP_UA_CPU),
+
+    /* Not really standard but common */
+    STR_AND_LEN(HTTP_X_ORIGINAL_URL),
 };
 
 struct scgi_header_def g_scgi_https_headers[] = {

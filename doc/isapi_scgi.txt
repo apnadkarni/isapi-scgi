@@ -207,6 +207,9 @@ if they were present in the client request:
 Please refer to http://www.ietf.org/rfc/rfc3875[RFC3875]
 for the meaning of the above headers.
 
+If any URL rewriters generate the `HTTP_X_ORIGINAL_URL` header,
+it is passed as well.
+
 In the case where the request is over an HTTPS connection, the following
 additional headers are added:
 `HTTPS_KEYSIZE`, `HTTPS_SECRETKEYSIZE`, `HTTPS_SERVER_ISSUER` and
