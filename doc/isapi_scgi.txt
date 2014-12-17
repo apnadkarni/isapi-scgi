@@ -201,8 +201,8 @@ of the request:
 In addition, it passes the following protocol specific headers
 if they were present in the client request:
 `HTTP_CONNECTION`, `HTTP_ACCEPT`, `HTTP_ACCEPT_ENCODING`,
-`HTTP_ACCEPT_LANGUAGE`, `HTTP_COOKIE`, `HTTP_HOST`, `HTTP_USER_AGENT` and
-`HTTP_UA_CPU` and `HTTPS`.
+`HTTP_ACCEPT_LANGUAGE`, `HTTP_COOKIE`, `HTTP_HOST`, `HTTP_REFERER`,
+`HTTP_USER_AGENT`, `HTTP_UA_CPU` and `HTTPS`.
 
 Please refer to http://www.ietf.org/rfc/rfc3875[RFC3875]
 for the meaning of the above headers.
