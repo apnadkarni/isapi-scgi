@@ -1921,6 +1921,7 @@ int scgi_process_header_line(context_t *cP)
     p = buf_data(&cP->header, cP->header_bol, &sz);
 
     /* TBD Assert linelen >= 2 since caller must guarantee CR LF ending */
+    /* TBD We expect no leading whitespace */
 
     /* p now points to sz contiguous bytes */
 
@@ -1944,26 +1945,36 @@ int scgi_process_header_line(context_t *cP)
     p = key;
     while (*p && *p != ':')
         ++p;
+    if (*p != ':') {
+        /* Actually a bad header. How to deal? For now, keep as is TBD */
+        cP->header_bol = buf_count(&cP->header);
+        return NO_CLOSE;
+    }
     *p = '\0';
     ch = key[0];
-    if ((ch == 'S' || ch == 's') && lstrcmpi(key+1, "tatus:") == 0) {
-        /* Found the status header. Save it off */
+    if ((ch == 'S' || ch == 's') && lstrcmpi(key+1, "tatus") == 0) {
+        /* Found the status header. Save it off dealing with white space */
         cP->status_nchars =
-            buf_count(&cP->header) /* Total bytes in header */
-            - cP->header_bol            /* minus start of line offset */
-            - (sizeof("Status:")-1)     /* minus Status: */
+            buf_count(&cP->header)     /* Total bytes in header */
+            - cP->header_bol           /* minus start of line offset */
+            - (sizeof("Status:")-1)    /* minus Status: */
             - 2;                        /* minus terminating CR-LF */
-        cP->status_line = scgi_allocate_memory(cP->status_nchars);
+        cP->status_line = scgi_allocate_memory(cP->status_nchars + 1);
         buf_copy_data(&cP->header, cP->header_bol, cP->status_line, cP->status_nchars);
-        buf_truncate(&cP->header, cP->header_bol); /* Erase status line */
-    } else if ((ch == 'L' || ch == 'l') && lstrcmpi(key+1, "ocation:") == 0) {
+        cP->status_line[cP->status_nchars] = '\0'; /* Must be null terminated */
+        /* Note: leading whitespace is dealt with when writing response */
+
+        /* Erase status line from rest of header */
+        buf_truncate(&cP->header, cP->header_bol);
+
+    } else if ((ch == 'L' || ch == 'l') && lstrcmpi(key+1, "ocation") == 0) {
         /* For now, just remember we have seen a location header */
         cP->flags |= CONTEXT_F_LOCATION_SEEN;
     } else if (ch == 'C' || ch == 'c') {
-        if (lstrcmpi(key+1, "ontent-type:") == 0) {
+        if (lstrcmpi(key+1, "ontent-type") == 0) {
             /* For now, just remember we have seen a content-type header */
             cP->flags |= CONTEXT_F_CONTENT_TYPE_SEEN;
-        } else if (lstrcmpi(key+1, "onnection:") == 0) {
+        } else if (lstrcmpi(key+1, "onnection") == 0) {
             char kabuf[32];
             sz = buf_copy_data(&cP->header, cP->header_bol+sizeof("Connection:")-1, kabuf, sizeof(kabuf)-1);
             kabuf[sz] = '\0';
@@ -1997,6 +2008,16 @@ int scgi_process_header(context_t *cP)
     DWORD sz;
     int retval = NO_CLOSE;
     
+    /* IIS wants a terminating null */
+    sz = 1;
+    p = buf_reserve(&cP->header, &sz, BUF_RESERVE_ALLOW_MOVE);
+    if (p == NULL) {
+        log_write("Could not allocate space for response header.");
+        return RESOURCE_ERROR_CLOSE;
+    }
+    *p = '\0';
+    buf_commit(&cP->header, 1);
+
     hdr.cchHeader = buf_count(&cP->header);
     hdr.pszHeader = buf_data(&cP->header, 0, &sz);
     if (sz != hdr.cchHeader) {
@@ -2007,6 +2028,7 @@ int scgi_process_header(context_t *cP)
         hdr.cchHeader = buf_copy_data(&cP->header, 0, allocatedP, hdr.cchHeader);
         hdr.pszHeader = allocatedP;
     }
+    hdr.cchHeader -= 1;         /* Don't count terminating \0 */
 
     p = cP->status_line;
     if (p) {
@@ -2058,7 +2080,10 @@ static int scgi_handle_response(context_t *cP, DWORD nbytes)
 
     /* Ensure header buffer will have enough bytes */
     while (p < end) {
-        space = end-p+1;        /* Extra 1 byte in case we have to LF->CR LF */
+        /* Always reserve two extra bytes, the first in case 
+         * we have to map LF->CR LF, the second for a terminating \0
+         * when the header is to be passed to IIS */
+        space = end - p + 1 + 1;
         dst_start = buf_reserve(&cP->header, &space, BUF_RESERVE_ALLOW_MOVE);
         dst = dst_start;
         /* NOTE nbytes now contains allocated space, NOT # chars */

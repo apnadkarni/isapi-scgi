@@ -105,8 +105,8 @@ typedef struct context {
 #define CONTEXT_HEADER_STATE_DONE   6    /* Finished header parsing */
 
 
-    char      *status_line;    /* HTTP response status line */
-    int        status_nchars;  /* Length of status line */
+    char      *status_line;    /* HTTP response status line buffer */
+    int        status_nchars;  /* Length excluding terminating \0*/
     int        header_bol;     /* Beginning of line offset into header buffer */
     buffer_t   header;         /* Buffer used to store HTTP response header */
     buffer_t   buf;            /* Data buffer */
