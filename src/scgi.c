@@ -1960,7 +1960,7 @@ int scgi_process_header_line(context_t *cP)
             - (sizeof("Status:")-1)    /* minus Status: */
             - 2;                        /* minus terminating CR-LF */
         cP->status_line = scgi_allocate_memory(cP->status_nchars + 1);
-        buf_copy_data(&cP->header, cP->header_bol, cP->status_line, cP->status_nchars);
+        buf_copy_data(&cP->header, cP->header_bol+(sizeof("Status:")-1), cP->status_line, cP->status_nchars);
         cP->status_line[cP->status_nchars] = '\0'; /* Must be null terminated */
         /* Note: leading whitespace is dealt with when writing response */
 
